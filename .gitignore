@@ -8,3 +8,6 @@ dev-dist
 *.local
 *.tsbuildinfo
 .DS_Store
+
+# Local planning notes (not published)
+plan*.md
