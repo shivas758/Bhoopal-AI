@@ -2,7 +2,9 @@ import { findBannedPesticide } from '../shared/pesticides'
 import { findState } from '../shared/states'
 import { asciiDigits } from '../shared/text'
 import { isLang, type DiagnoseProblem, type DiagnoseRequest, type DiagnoseResult, type Likelihood } from '../shared/types'
+import { spendDailyBudget } from './budget'
 import { callGemini, type GeminiChunk } from './gemini'
+import { record, type MetricEvent } from './metrics'
 import { DIAGNOSE_SCHEMA, diagnoseSystemPrompt } from './prompts'
 import { BadRequest, UpstreamError, apiError, json } from './util'
 
@@ -173,6 +175,18 @@ export async function handleDiagnose(request: Request, env: Env): Promise<Respon
     generationConfig: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: 'application/json', responseSchema: DIAGNOSE_SCHEMA },
   }
 
+  const started = Date.now()
+  const metric = (outcome: string, extra: Partial<MetricEvent> = {}) =>
+    record(env, { kind: 'photo', outcome, lang: req.lang, state: farmer.state, ms: Date.now() - started, ...extra })
+
+  // Photo checks have their own daily share, so they can't use up the whole free AI quota.
+  const budget = await spendDailyBudget(env, 'photo', request)
+  if (!budget.ok) {
+    metric('daily_limit', { detail: budget.scope })
+    const retryAt = budget.retryAt ? new Date(budget.retryAt).toISOString() : undefined
+    return budget.scope === 'total' ? apiError('busy', 503, { retryAt }) : apiError('daily_limit', 429, { retryAt })
+  }
+
   // One retry on another model when the answer is cut off or isn't valid JSON.
   const tried: string[] = []
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -181,18 +195,26 @@ export async function handleDiagnose(request: Request, env: Env): Promise<Respon
     const out = (await res.json()) as GeminiChunk
     const candidate = out.candidates?.[0]
     if (out.promptFeedback?.blockReason || candidate?.finishReason === 'SAFETY' || candidate?.finishReason === 'PROHIBITED_CONTENT') {
-      console.warn(`diagnose blocked by ${model}: ${out.promptFeedback?.blockReason ?? candidate?.finishReason}`)
+      metric('blocked', { model, finish: out.promptFeedback?.blockReason ?? candidate?.finishReason, calls: attempt + 1 })
       return apiError('blocked', 422)
     }
     const output = candidate?.content?.parts?.find((p) => p.text && !p.thought)?.text
     try {
       if (!output || candidate?.finishReason === 'MAX_TOKENS') throw new Error(candidate?.finishReason ?? 'no text')
       const result = sanitize(JSON.parse(output), Boolean(crop))
-      console.log(`diagnose answered by ${model}${attempt ? ' (retry)' : ''}`)
+      metric('answered', {
+        model,
+        finish: candidate?.finishReason,
+        calls: attempt + 1,
+        detail: [result.image_quality, result.possible_problems.map((p) => p.likelihood).join('/'), result.crop_mismatch && 'mismatch']
+          .filter(Boolean)
+          .join(' '),
+      })
       return json(result)
     } catch (err) {
       console.warn(`diagnose: ${model} gave no usable JSON (${err instanceof Error ? err.message : String(err)})`)
     }
   }
+  metric('no_answer', { calls: tried.length })
   throw new UpstreamError('Gemini returned no usable diagnosis')
 }

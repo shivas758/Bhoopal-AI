@@ -29,7 +29,9 @@ export const en = {
   'error.upstream': "The data service isn't answering right now. Please try again in a little while.",
   'error.generic': 'Oops, something went wrong. Please try again.',
   'error.resting':
-    "BhooPal's free AI is resting until about {time} today 😴 Meanwhile crop prices, weather, schemes and calculators still work, and the Kisan Call Centre answers for free:",
+    "BhooPal's free AI is resting until about {time} 😴 Meanwhile crop prices, weather, schemes and calculators still work, and the Kisan Call Centre answers for free:",
+  'error.daily_limit':
+    "You've asked a lot today! 🙏 To share the free AI with other farmers, BhooPal will answer again after {time}. Crop prices, weather and calculators still work, and the Kisan Call Centre answers for free:",
 
   'pwa.updateAvailable': 'A new version of BhooPal is available.',
   'pwa.update': 'Update',
@@ -93,6 +95,9 @@ export const en = {
   'chat.readAloud': 'Read aloud',
   'chat.stop': 'Stop',
   'chat.cutShort': 'The answer was cut short. Ask "continue" to get the rest.',
+  'feedback.helpful': 'Helpful',
+  'feedback.wrong': 'Wrong',
+  'feedback.thanks': 'Thanks for telling me! 🙏',
   'chat.noVoice':
     'Your phone has no voice for this language yet. Open Settings, search "Text-to-speech", choose Google Speech Services, then Install voice data and pick your language.',
   'chat.thinking': 'Thinking about your question…',

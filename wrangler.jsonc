@@ -11,6 +11,15 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"],
   },
+  // Workers Cache (free on workers.dev): GET /api/weather, /api/districts and /api/prices are served from
+  // Cloudflare's cache for their Cache-Control max-age without running the Worker. Note: with this on,
+  // static-asset requests also count towards the 100k requests/day.
+  "cache": { "enabled": true },
+  // Secrets (set with `npx wrangler secret put <NAME>`, or in .dev.vars for local dev). Listing them here
+  // keeps worker-configuration.d.ts the same on every machine, so CI can check it.
+  //   GEMINI_API_KEY     - free key from https://aistudio.google.com/apikey
+  //   DATA_GOV_API_KEY   - free key from https://www.data.gov.in (My Account > API key)
+  "secrets": { "required": ["GEMINI_API_KEY", "DATA_GOV_API_KEY"] },
   "vars": {
     // Gemini models, best first. The free tier allows ~20 requests/day PER MODEL, so the Worker
     // rotates through all of them. Most questions use 1 request (the Worker looks prices, weather and
@@ -22,6 +31,9 @@
     "GEMINI_THINKING_LEVEL": "low",
     // Sent to MET Norway and Agmarknet so they can identify us. MET Norway requires contact info (site URL or email).
     "USER_AGENT": "BhooPal/0.1 (+https://bhoopal.shivasahith.workers.dev)",
+    // AI questions per day (resets at midnight Pacific, with Gemini's quota). Price buttons and cached
+    // answers don't count. A "device" is one phone (random id in its storage); many farmers can share an IP.
+    "DAILY_LIMITS": { "chatPerDevice": 25, "chatPerIp": 40, "photosPerDevice": 5, "photosPerIp": 10, "photosTotal": 25 },
   },
   // Per-IP limits so one user can't drain the free quotas. Counted per Cloudflare location and only roughly,
   // so they are a backstop, not exact accounting. A village behind one carrier IP shares them.
@@ -30,10 +42,46 @@
     // Raised for group demos (a KVK meeting of 30 farmers behind one IP).
     { "name": "PHOTO_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } },
     { "name": "PRICES_LIMITER", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } },
-    // Weather and district lists: cheap for us, but MET Norway bans abusive User-Agents.
+    // Weather, district lists and feedback: cheap for us, but MET Norway bans abusive User-Agents.
     { "name": "DATA_LIMITER", "namespace_id": "1004", "simple": { "limit": 60, "period": 60 } },
   ],
-  // Secrets (set with `npx wrangler secret put <NAME>`, or in .dev.vars for local dev):
-  //   GEMINI_API_KEY     - free key from https://aistudio.google.com/apikey
-  //   DATA_GOV_API_KEY   - free key from https://www.data.gov.in (My Account > API key)
+  // Shared store: cache, model rest state, daily budgets, answer cache, price snapshots, health status.
+  // Schema in migrations/ (`npm run db:migrate`).
+  "d1_databases": [{ "binding": "DB", "database_name": "bhoopal", "database_id": "367f90b5-3443-467b-870e-9c78577315aa" }],
+  // One data point per answer, photo check and thumbs up/down: model, finish reason, language, state, error
+  // code. Never the farmer's text. Free: 100k points/day.
+  "analytics_engine_datasets": [{ "binding": "STATS", "dataset": "bhoopal_events" }],
+  // The deployed version id, logged with every answer so a bug report can be matched to a release.
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
+  "triggers": {
+    // 14:30 UTC = 8 PM IST: snapshot today's (and late-reported yesterday's) mandi prices for the South
+    // Indian states. Every 30 min: probe Agmarknet, data.gov.in and MET Norway for /api/health.
+    // The free plan allows 5 cron triggers per account.
+    "crons": ["30 14 * * *", "*/30 * * * *"],
+  },
+
+  "env": {
+    // A second free Worker (bhoopal-staging.<account>.workers.dev) to try a release before farmers see it.
+    // Build and deploy with `npm run deploy:staging`. Bindings and vars are not inherited, so they're repeated
+    // here; secrets are set separately with `--env staging`. It shares the Gemini key, and so its quota.
+    "staging": {
+      "vars": {
+        "GEMINI_MODELS": "gemini-3.6-flash,gemini-3.7-flash,gemini-3.5-flash,gemini-2.5-flash,gemini-3.5-flash-lite",
+        "GEMINI_THINKING_LEVEL": "low",
+        "USER_AGENT": "BhooPal/0.1 (+https://bhoopal.shivasahith.workers.dev)",
+        "DAILY_LIMITS": { "chatPerDevice": 25, "chatPerIp": 40, "photosPerDevice": 5, "photosPerIp": 10, "photosTotal": 25 },
+      },
+      "ratelimits": [
+        { "name": "CHAT_LIMITER", "namespace_id": "2001", "simple": { "limit": 20, "period": 60 } },
+        { "name": "PHOTO_LIMITER", "namespace_id": "2002", "simple": { "limit": 30, "period": 60 } },
+        { "name": "PRICES_LIMITER", "namespace_id": "2003", "simple": { "limit": 60, "period": 60 } },
+        { "name": "DATA_LIMITER", "namespace_id": "2004", "simple": { "limit": 60, "period": 60 } },
+      ],
+      "d1_databases": [{ "binding": "DB", "database_name": "bhoopal-staging", "database_id": "9e7deb2a-3ec9-4960-880e-7fe1fe9e0357" }],
+      "analytics_engine_datasets": [{ "binding": "STATS", "dataset": "bhoopal_staging_events" }],
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
+      // No crons on staging: they'd use 2 of the account's 5 and double the upstream probes.
+      "triggers": { "crons": [] },
+    },
+  },
 }

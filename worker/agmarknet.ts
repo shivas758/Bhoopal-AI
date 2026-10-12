@@ -60,19 +60,41 @@ function headers(env: Env) {
 }
 
 function getFilters(env: Env): Promise<Filters> {
-  return cached('agm2:filters', DAY, async () => {
-    const res = await upstreamFetch('Agmarknet', `${API}/daily-price-arrival/filters`, {
-      headers: headers(env),
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (!res.ok) throw new UpstreamError(`Agmarknet filters ${res.status}`)
-    const { data } = (await res.json()) as FiltersResponse
-    return {
-      states: data.state_data.filter((s) => isReal(s.state_id)).map((s) => ({ id: s.state_id, name: s.state_name })),
-      districts: data.district_data.filter((d) => isReal(d.id) && d.state_id !== null).map((d) => ({ id: d.id, stateId: d.state_id!, name: d.district_name })),
-      commodities: data.cmdt_data.filter((c) => isReal(c.cmdt_id)).map((c) => ({ id: c.cmdt_id, name: c.cmdt_name })),
-    }
-  })
+  return cached(
+    'agm2:filters',
+    DAY,
+    async () => {
+      const res = await upstreamFetch('Agmarknet', `${API}/daily-price-arrival/filters`, {
+        headers: headers(env),
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (!res.ok) throw new UpstreamError(`Agmarknet filters ${res.status}`)
+      const { data } = (await res.json()) as FiltersResponse
+      return {
+        states: data.state_data.filter((s) => isReal(s.state_id)).map((s) => ({ id: s.state_id, name: s.state_name })),
+        districts: data.district_data
+          .filter((d) => isReal(d.id) && d.state_id !== null)
+          .map((d) => ({ id: d.id, stateId: d.state_id!, name: d.district_name })),
+        commodities: data.cmdt_data.filter((c) => isReal(c.cmdt_id)).map((c) => ({ id: c.cmdt_id, name: c.cmdt_name })),
+      }
+    },
+    { shared: env.DB },
+  )
+}
+
+/** The reported mandi prices among a dashboard's rows (it also lists mandis that didn't report). */
+function reported(rows: MarketRow[], date: string): MarketPrice[] {
+  return rows
+    .filter((r) => r.status === 'Reported Markets' && Number(r.modal_price_wt) > 0)
+    .map((r): MarketPrice => ({
+      market: r.mkt_name.trim(),
+      district: r.district_name,
+      commodity: r.cmdt_name,
+      date,
+      modalPrice: Number(r.modal_price_wt),
+      unit: r.unit_name_price ?? 'Rs./Quintal',
+      arrival: r.arrival_qty ? `${r.arrival_qty} ${r.unit_name_arrival ?? ''}`.trim() : undefined,
+    }))
 }
 
 async function dashboard<T>(env: Env, body: Record<string, unknown>): Promise<T[]> {
@@ -130,26 +152,21 @@ export async function agmarknetMarketPrices(
       const date = isoDaysAgo(ago)
       const key = `agm2:mkt:${stateId}:${match?.id ?? ''}:${commodityIds.join(',')}:${date}`
       // Today's figures keep arriving through the day; past days are final.
-      return cached(key, ago === 0 ? 30 * 60 : 6 * 3600, async () => {
-        const rows = await dashboard<MarketRow>(env, {
-          dashboard: 'market_details_sp',
-          date,
-          state: [stateId],
-          ...(match ? { district: [match.id] } : {}),
-          commodity: commodityIds,
-        })
-        return rows
-          .filter((r) => r.status === 'Reported Markets' && Number(r.modal_price_wt) > 0)
-          .map((r): MarketPrice => ({
-            market: r.mkt_name.trim(),
-            district: r.district_name,
-            commodity: r.cmdt_name,
+      return cached(
+        key,
+        ago === 0 ? 30 * 60 : 6 * 3600,
+        async () => {
+          const rows = await dashboard<MarketRow>(env, {
+            dashboard: 'market_details_sp',
             date,
-            modalPrice: Number(r.modal_price_wt),
-            unit: r.unit_name_price ?? 'Rs./Quintal',
-            arrival: r.arrival_qty ? `${r.arrival_qty} ${r.unit_name_arrival ?? ''}`.trim() : undefined,
-          }))
-      })
+            state: [stateId],
+            ...(match ? { district: [match.id] } : {}),
+            commodity: commodityIds,
+          })
+          return reported(rows, date)
+        },
+        { shared: env.DB },
+      )
     }),
   )
 
@@ -167,17 +184,49 @@ export async function agmarknetStateSummary(env: Env, state: IndianState, commod
   const filters = await getFilters(env)
   const stateId = stateIdFor(filters, state)
   if (!stateId || !commodityIds.length) return []
-  return cached(`agm2:sum:${stateId}:${commodityIds.join(',')}`, 30 * 60, async () => {
-    const summaryFor = (ago: number) =>
-      dashboard<SummaryRow>(env, { dashboard: 'marketwise_price_arrival', date: isoDaysAgo(ago), state: stateId, commodity: commodityIds })
-    // Early in the morning today's summary is still empty.
-    let rows = await summaryFor(0)
-    if (!rows.length) rows = await summaryFor(1)
-    return rows.map((r) => ({
-      commodity: r.cmdt_name,
-      msp: Number(r.msp_price) > 0 ? Number(r.msp_price) : undefined,
-      stateAverage: Number(r.as_on_price) > 0 ? Number(r.as_on_price) : undefined,
-      date: r.reported_date,
-    }))
-  })
+  return cached(
+    `agm2:sum:${stateId}:${commodityIds.join(',')}`,
+    30 * 60,
+    async () => {
+      const summaryFor = (ago: number) =>
+        dashboard<SummaryRow>(env, { dashboard: 'marketwise_price_arrival', date: isoDaysAgo(ago), state: stateId, commodity: commodityIds })
+      // Early in the morning today's summary is still empty.
+      let rows = await summaryFor(0)
+      if (!rows.length) rows = await summaryFor(1)
+      return rows.map((r) => ({
+        commodity: r.cmdt_name,
+        msp: Number(r.msp_price) > 0 ? Number(r.msp_price) : undefined,
+        stateAverage: Number(r.as_on_price) > 0 ? Number(r.as_on_price) : undefined,
+        date: r.reported_date,
+      }))
+    },
+    { shared: env.DB },
+  )
+}
+
+/** Agmarknet commodity ids for these crops (all their forms), e.g. for the daily snapshot. */
+export async function agmarknetIdsFor(env: Env, cropIds: string[]): Promise<number[]> {
+  const { commodities } = await getFilters(env)
+  return commodities.filter((c) => cropIds.includes(commodityForRecord(c.name)?.id ?? '')).map((c) => c.id)
+}
+
+/** Every reported mandi price in a state on one date, for these commodity ids: one request (~70 KB). */
+export async function agmarknetStateDay(env: Env, state: IndianState, date: string, commodityIds: number[]): Promise<MarketPrice[]> {
+  const filters = await getFilters(env)
+  const stateId = stateIdFor(filters, state)
+  if (!stateId || !commodityIds.length) return []
+  return reported(await dashboard<MarketRow>(env, { dashboard: 'market_details_sp', date, state: [stateId], commodity: commodityIds }), date)
+}
+
+/**
+ * A cheap live check for the health probe: the filters list (cached for a day) and one small dashboard query,
+ * the endpoint every price lookup depends on. Throws when Agmarknet is down.
+ */
+export async function agmarknetProbe(env: Env, state: IndianState): Promise<string> {
+  const filters = await getFilters(env)
+  const stateId = stateIdFor(filters, state)
+  const paddy = filters.commodities.filter((c) => commodityForRecord(c.name)?.id === 'Paddy').map((c) => c.id)
+  if (!stateId || !paddy.length) throw new UpstreamError('Agmarknet filters lack the probe state or crop')
+  const rows = await dashboard<SummaryRow>(env, { dashboard: 'marketwise_price_arrival', date: isoDaysAgo(1), state: stateId, commodity: paddy })
+  return `${rows.length} summary rows`
 }

@@ -12,7 +12,11 @@ import {
   type Lang,
   type PriceResult,
 } from '../shared/types'
-import { callGemini, readGeminiStream, toolHistoryAsText, toolResultText, type GeminiContent, type GeminiPart } from './gemini'
+import { fold } from '../shared/text'
+import { spendDailyBudget } from './budget'
+import { callGemini, pauseModel, readGeminiStream, toolHistoryAsText, toolResultText, type GeminiChunk, type GeminiContent, type GeminiPart } from './gemini'
+import { record, type MetricEvent } from './metrics'
+import { readAnswer, writeAnswer } from './store'
 import { detectIntents } from './intents'
 import { createOutputFilter } from './outputFilter'
 import { priceAnswer } from './priceAnswer'
@@ -128,6 +132,17 @@ function schemeInfo(lang: Lang, stateId: string | undefined) {
 const withTimeout = <T>(promise: Promise<T>, ms: number) =>
   Promise.race([promise, new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ms))])
 
+/**
+ * Key for the shared answer cache: same language, place, crops, quarter of the India day (the prompt has the
+ * time, and advice like "spray this evening" ages) and question, ignoring case and spacing.
+ */
+export async function answerHash(req: Pick<ChatRequest, 'lang' | 'district' | 'crops'>, stateId: string | undefined, question: string, now = indiaNow()) {
+  const slot = `${now.toISOString().slice(0, 10)}#${Math.floor(now.getUTCHours() / 6)}`
+  const key = JSON.stringify([req.lang, stateId ?? '', req.district ?? '', [...(req.crops ?? [])].sort(), slot, fold(question)])
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key))
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 /** Short, stable id for a question, so a farmer's bug report can be matched in the 3-day logs without storing their text. */
 function questionId(text: string) {
   let h = 0x811c9dc5
@@ -141,7 +156,10 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
   // Price buttons can be answered without the AI; everything else needs it.
   if (!env.GEMINI_API_KEY && !req.intent) return apiError('not_configured', 503)
   // Local testing only: compare models on the same question.
-  const onlyModels = new URL(request.url).hostname === 'localhost' && typeof body?.model === 'string' ? [body.model] : undefined
+  const local = new URL(request.url).hostname === 'localhost'
+  const onlyModels = local && typeof body?.model === 'string' ? [body.model] : undefined
+  // Local testing only (the golden set): skip the shared answer cache, which would replay old answers.
+  const noCache = local && (body as { noCache?: unknown } | null)?.noCache === true
   const state = findState(req.state)
   const farmer = { state: state?.id, district: req.district, crops: req.crops }
   const question = req.messages.at(-1)!.text
@@ -169,10 +187,18 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
   const writer = writable.getWriter()
   const encoder = new TextEncoder()
   const send = (event: ChatEvent) => writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
-  const filter = createOutputFilter(req.lang, (text) => send({ type: 'text', text }))
+  let sentText = ''
+  const filter = createOutputFilter(req.lang, (text) => {
+    sentText += text
+    return send({ type: 'text', text })
+  })
+  const started = Date.now()
+  const metric = (outcome: string, extra: Partial<MetricEvent> = {}) =>
+    record(env, { kind: 'chat', outcome, id: qid, lang: req.lang, state: state?.id, ms: Date.now() - started, ...extra })
 
   const run = async () => {
     let calls = 0
+    const toolsUsed = new Set<string>()
     try {
       // 1. Look up what the question obviously needs before the first AI call (saves a whole tool round).
       const intents = detectIntents(question)
@@ -183,6 +209,8 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
         priceCrop ? runTool('get_mandi_prices', { commodity: priceCrop }) : undefined,
         intents.weather ? withTimeout(runTool('get_weather_forecast', {}), PREFETCH_WEATHER_MS) : undefined,
       ])
+      if (prices) toolsUsed.add('get_mandi_prices')
+      if (weather) toolsUsed.add('get_weather_forecast')
 
       // 2. A price button answered straight from Agmarknet: no AI call, works even when the AI is resting.
       if (req.intent?.kind === 'price' && prices && !('error' in prices)) {
@@ -191,19 +219,39 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
           requestedDistrict: req.district,
         })
         if (text) {
-          await send({ type: 'meta', model: 'template' })
+          await send({ type: 'meta', model: 'template', id: qid })
           await send({ type: 'text', text })
           await send({ type: 'done' })
-          console.log(`chat ${qid} answered from template (${req.intent.commodity})`)
+          metric('template', { model: 'template', tools: 'get_mandi_prices', detail: req.intent.commodity })
           return
         }
       }
+
+      // 3. The same first question from a farmer with the same profile, earlier today: replay that answer.
+      // Not for live prices or weather, which change during the day.
+      const answerKey = !noCache && req.messages.length === 1 && !priceCrop && !intents.weather ? await answerHash(req, state?.id, question) : undefined
+      const saved = answerKey ? await readAnswer(env.DB, answerKey) : undefined
+      if (saved) {
+        await send({ type: 'meta', model: `cache:${saved.model ?? ''}`, id: qid })
+        await send({ type: 'text', text: saved.text })
+        await send({ type: 'done' })
+        metric('cached', { model: saved.model ?? '' })
+        return
+      }
+
       if (!env.GEMINI_API_KEY) {
         await send({ type: 'error', code: 'not_configured' })
         return
       }
+      // 4. Today's free-AI share for this phone and network.
+      const budget = await spendDailyBudget(env, 'chat', request)
+      if (!budget.ok) {
+        await send({ type: 'error', code: 'daily_limit', ...(budget.retryAt ? { retryAt: new Date(budget.retryAt).toISOString() } : {}) })
+        metric('daily_limit', { detail: budget.scope })
+        return
+      }
 
-      // 3. The AI answers, with the looked-up data attached to the question as tool results.
+      // 5. The AI answers, with the looked-up data attached to the question as tool results.
       const lookedUp: GeminiPart[] = [
         ...(prices ? [{ text: toolResultText('get_mandi_prices', prices) }] : []),
         ...(weather ? [{ text: toolResultText('get_weather_forecast', weather) }] : []),
@@ -221,6 +269,7 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
       let answered = false
       let toolRounds = 0
       let forceAnswer = false
+      let streamRetries = 0
       const quiet: string[] = []
 
       while (true) {
@@ -247,18 +296,27 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
         )
         if (model && call.model !== model) contents = toolHistoryAsText(contents)
         model = call.model
-        await send({ type: 'meta', model })
+        await send({ type: 'meta', model, id: qid })
 
         let roundText = false
         finishReason = undefined
         const modelParts: GeminiPart[] = []
         const toolCalls: NonNullable<GeminiPart['functionCall']>[] = []
+        let chunks = 0
+        let lastChunk = ''
+        let streamError: GeminiChunk['error']
         for await (const chunk of readGeminiStream(call.res.body!)) {
+          chunks++
+          lastChunk = JSON.stringify(chunk).slice(0, 300)
+          if (chunk.error) {
+            streamError = chunk.error
+            break
+          }
           const candidate = chunk.candidates?.[0]
           if (chunk.promptFeedback?.blockReason || candidate?.finishReason === 'SAFETY' || candidate?.finishReason === 'PROHIBITED_CONTENT') {
             await filter.flush()
             await send({ type: 'error', code: 'blocked' })
-            console.warn(`chat ${qid} blocked by ${model}: ${chunk.promptFeedback?.blockReason ?? candidate?.finishReason}`)
+            metric('blocked', { model, finish: chunk.promptFeedback?.blockReason ?? candidate?.finishReason, calls })
             return
           }
           if (candidate?.finishReason) finishReason = candidate.finishReason
@@ -272,13 +330,32 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
             }
           }
         }
+        // An overloaded model can fail in the middle of an answer that started fine. Once per question, start
+        // the answer again on another model; the app drops what it received so far.
+        if (streamError) {
+          console.warn(`chat ${qid}: ${model} failed mid-answer after ${chunks} chunks: ${streamError.status ?? streamError.code} ${streamError.message ?? ''}`)
+          pauseModel(model)
+          if (streamRetries < 1) {
+            streamRetries++
+            filter.discard()
+            if (sentText) {
+              sentText = ''
+              await send({ type: 'reset' })
+            }
+            quiet.push(model)
+            continue
+          }
+        }
         await filter.flush()
 
         if (toolCalls.length && !last) {
           // A preface like "Let me check prices…" is not the answer: the round after the tools must answer.
           toolRounds++
           contents.push({ role: 'model', parts: modelParts })
-          for (const name of new Set(toolCalls.map((c) => c.name))) await send({ type: 'tool', name })
+          for (const name of new Set(toolCalls.map((c) => c.name))) {
+            toolsUsed.add(name)
+            await send({ type: 'tool', name })
+          }
           const results = await Promise.all(toolCalls.map((c) => runTool(c.name, c.args ?? {})))
           // Only the crop is logged from tool arguments, never anything the farmer typed.
           toolCalls.forEach((c, i) =>
@@ -294,7 +371,7 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
           answered = true
           // MAX_TOKENS, or a stream that ended without saying why: the farmer sees "answer cut short".
           if (finishReason === 'MAX_TOKENS' || !finishReason) {
-            console.warn(`chat ${qid} answer cut short by ${model} (${finishReason ?? 'stream ended early'}; aborted=${request.signal.aborted})`)
+            console.warn(`chat ${qid} answer cut short by ${model} (${finishReason ?? 'stream ended early'}; ${chunks} chunks; last: ${lastChunk})`)
             await send({ type: 'cut' })
           }
           break
@@ -307,22 +384,29 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
         forceAnswer = true
       }
 
-      console.log(`chat ${qid} answered by ${model} (${finishReason}); ${calls} AI call(s), ${toolRounds} tool round(s), prefetched ${lookedUp.length}`)
+      const summary = { model, finish: finishReason, calls, toolRounds, tools: [...toolsUsed].join(',') }
       if (!answered) {
         await send({ type: 'error', code: 'upstream' })
+        metric('no_answer', summary)
         return
       }
       await send({ type: 'done' })
+      metric('answered', summary)
+      // Keep a complete, tool-free answer for the next farmer who asks exactly this today.
+      if (answerKey && model && finishReason === 'STOP' && toolRounds === 0 && sentText.trim()) {
+        ctx.waitUntil(writeAnswer(env.DB, answerKey, sentText, model))
+      }
     } catch (err) {
       await filter.flush().catch(() => {})
       if (request.signal.aborted) {
-        console.log(`chat ${qid}: farmer left after ${calls} AI call(s)`)
+        metric('aborted', { calls })
         return
       }
       console.error(`chat ${qid} failed`, err)
       const busy = err instanceof UpstreamError && err.status === 429
       const retryAt = busy && err.retryAt ? new Date(err.retryAt).toISOString() : undefined
       await send({ type: 'error', code: busy ? 'busy' : 'upstream', ...(retryAt ? { retryAt } : {}) }).catch(() => {})
+      metric(busy ? 'busy' : 'upstream', { calls, detail: err instanceof Error ? err.message.slice(0, 120) : undefined })
     } finally {
       await writer.close().catch(() => {})
     }

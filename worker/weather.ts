@@ -101,18 +101,45 @@ export const inIndia = (lat: number, lon: number) => Number.isFinite(lat) && Num
 const GRID = 0.05
 const toGrid = (n: number) => (Math.round(n / GRID) * GRID).toFixed(2)
 
-export function getForecast(env: Env, lat: number, lon: number): Promise<WeatherResponse> {
+// MET's terms: don't ask again before the Expires time, and send If-Modified-Since (a 304 means "no change").
+const MIN_TTL_SECONDS = 15 * 60
+const MAX_TTL_SECONDS = 2 * 3600
+const lastForecast = new Map<string, { lastModified: string; data: WeatherResponse }>()
+
+function ttlFromExpires(expires: string | null) {
+  const seconds = Math.round((Date.parse(expires ?? '') - Date.now()) / 1000)
+  return Number.isFinite(seconds) ? Math.min(MAX_TTL_SECONDS, Math.max(MIN_TTL_SECONDS, seconds)) : 30 * 60
+}
+
+export async function getForecast(env: Env, lat: number, lon: number): Promise<WeatherResponse> {
   const la = toGrid(lat)
   const lo = toGrid(lon)
-  return cached(`wx:${la},${lo}`, 30 * 60, async (): Promise<WeatherResponse> => {
-    const res = await upstreamFetch('MET Norway', `${MET}?lat=${la}&lon=${lo}`, {
-      headers: { 'user-agent': String(env.USER_AGENT), accept: 'application/json' },
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (!res.ok) throw new UpstreamError(`MET Norway ${res.status}`)
-    const body = (await res.json()) as { properties: { meta: { updated_at: string }; timeseries: MetEntry[] } }
-    return { updatedAt: body.properties.meta.updated_at, ...summarize(body.properties.timeseries) }
-  })
+  const key = `wx:${la},${lo}`
+  // Forecasts stay in memory only: one per 5 km cell would use up the shared store's write allowance.
+  const { data } = await cached(
+    key,
+    (v: { ttl: number }) => v.ttl,
+    async (): Promise<{ data: WeatherResponse; ttl: number }> => {
+      const previous = lastForecast.get(key)
+      const res = await upstreamFetch('MET Norway', `${MET}?lat=${la}&lon=${lo}`, {
+        headers: { 'user-agent': String(env.USER_AGENT), accept: 'application/json', ...(previous ? { 'if-modified-since': previous.lastModified } : {}) },
+        signal: AbortSignal.timeout(15_000),
+      })
+      const ttl = ttlFromExpires(res.headers.get('expires'))
+      if (res.status === 304 && previous) return { data: previous.data, ttl }
+      if (!res.ok) throw new UpstreamError(`MET Norway ${res.status}`)
+      const body = (await res.json()) as { properties: { meta: { updated_at: string }; timeseries: MetEntry[] } }
+      const forecast: WeatherResponse = { updatedAt: body.properties.meta.updated_at, ...summarize(body.properties.timeseries) }
+      const lastModified = res.headers.get('last-modified')
+      if (lastModified) {
+        lastForecast.delete(key)
+        lastForecast.set(key, { lastModified, data: forecast })
+        if (lastForecast.size > 200) lastForecast.delete(lastForecast.keys().next().value!)
+      }
+      return { data: forecast, ttl }
+    },
+  )
+  return data
 }
 
 export async function handleWeather(url: URL, env: Env): Promise<Response> {

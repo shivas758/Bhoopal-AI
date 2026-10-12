@@ -4,14 +4,28 @@
   "license": "MIT",
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:staging": "tsc -b && vite build --mode staging",
     "preview": "npm run build && vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
+    "lint": "oxlint src worker shared scripts golden",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "types": "wrangler types",
-    "deploy": "npm run build && wrangler deploy"
+    "check": "wrangler types --check && npm run typecheck && npm run lint && npm run format:check && npm test",
+    "deploy:staging": "npm run build:staging && wrangler deploy && npm run smoke -- https://bhoopal-staging.shivasahith.workers.dev",
+    "deploy": "npm run build && wrangler deploy && npm run smoke -- https://bhoopal.shivasahith.workers.dev",
+    "smoke": "node scripts/smoke.mjs",
+    "db:migrate:local": "wrangler d1 migrations apply bhoopal --local --config wrangler.jsonc",
+    "db:migrate:staging": "wrangler d1 migrations apply bhoopal-staging --remote --env staging --config wrangler.jsonc",
+    "db:migrate": "wrangler d1 migrations apply bhoopal --remote --config wrangler.jsonc",
+    "golden": "vitest run --config vitest.golden.config.ts"
   },
   "dependencies": {
     "lucide-react": "^1.54.0",
@@ -26,6 +40,8 @@
     "@types/react-dom": "^19.3.0",
     "@vite-pwa/assets-generator": "^2.0.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "oxlint": "^1.87.0",
+    "prettier": "^3.9.10",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",

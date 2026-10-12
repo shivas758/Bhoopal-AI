@@ -72,6 +72,21 @@ export interface ChatMessage {
   model?: string
   /** The answer hit the output limit and stops mid-way. */
   cut?: boolean
+  /** Answer id from the Worker, for feedback. */
+  id?: string
+  /** The farmer's thumbs up/down on this answer. */
+  vote?: Vote
+}
+
+export type Vote = 'up' | 'down'
+
+/** POST /api/feedback: a thumbs up/down on an answer or a photo check. */
+export interface FeedbackRequest {
+  kind: 'chat' | 'photo'
+  vote: Vote
+  id?: string
+  model?: string
+  lang: Lang
 }
 
 /** A question the app already understands, so the Worker can answer it without the AI. */
@@ -90,7 +105,8 @@ export interface ChatRequest {
   intent?: ChatIntent
 }
 
-export type ApiErrorCode = 'busy' | 'rate_limited' | 'not_configured' | 'bad_request' | 'upstream' | 'blocked' | 'server_error'
+/** 'daily_limit': this phone or network used its share of today's free AI questions. Old apps show it as generic. */
+export type ApiErrorCode = 'busy' | 'rate_limited' | 'daily_limit' | 'not_configured' | 'bad_request' | 'upstream' | 'blocked' | 'server_error'
 
 /** JSON body of every API error. `retryAt` (ISO time) tells the farmer when the free AI quota is back. */
 export interface ApiErrorBody {
@@ -106,8 +122,11 @@ export type ChatEvent =
   | { type: 'text'; text: string }
   | { type: 'tool'; name: string }
   | { type: 'error'; code: ApiErrorCode; retryAt?: string }
-  | { type: 'meta'; model: string }
+  /** model: which AI wrote it ("template", "cache:<model>"); id: the answer's id, sent back with feedback. */
+  | { type: 'meta'; model: string; id?: string }
   | { type: 'cut' }
+  /** The model failed mid-answer and another one starts again: drop the text received so far. */
+  | { type: 'reset' }
   | { type: 'done' }
 
 /** One mandi's latest price. Prices are ₹ per `unit` (almost always Rs./Quintal). */
@@ -146,6 +165,10 @@ export interface PriceResult {
   msp?: { price: number; season?: string; note?: string }
   /** Agmarknet's state-wide average for the crop, ₹ per quintal. */
   stateAverage?: { price: number; date: string }
+  /** State-wide typical price per recent day, from saved daily snapshots (direction only, not a prediction). */
+  trend7d?: { date: string; typicalPrice: number; mandis: number }[]
+  /** Set when the live services were down and these rows come from the saved snapshot of this date. */
+  fromSnapshot?: string
   note?: string
   howToRead: string
   source: string

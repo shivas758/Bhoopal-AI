@@ -6,10 +6,12 @@ import type {
   DiagnoseRequest,
   DiagnoseResult,
   DistrictsResponse,
+  FeedbackRequest,
   PricesResponse,
   WeatherResponse,
 } from '../../shared/types'
 import type { MessageKey, TranslateVars } from '../i18n'
+import { deviceHeader } from './device'
 
 export type ClientErrorCode = ApiErrorCode | 'network'
 
@@ -32,6 +34,8 @@ export function errorMessageKey(err: unknown): MessageKey {
       return err instanceof ApiError && err.retryAt ? 'error.resting' : 'error.busy'
     case 'rate_limited':
       return 'error.rate_limited'
+    case 'daily_limit':
+      return 'error.daily_limit'
     case 'not_configured':
       return 'error.not_configured'
     case 'blocked':
@@ -43,12 +47,18 @@ export function errorMessageKey(err: unknown): MessageKey {
   }
 }
 
-/** Values for the error message, e.g. the time the free AI is back ("1:30 PM"). */
-export function errorMessageVars(err: unknown, bcp47: string): TranslateVars | undefined {
+const indiaDate = (ms: number) => new Date(ms + 5.5 * 3600 * 1000).toISOString().slice(0, 10)
+
+/**
+ * Values for the error message, e.g. when the free AI is back: "1:30 PM", or "tomorrow 1:30 PM" once today's
+ * reset (about 12:30/1:30 PM in India) has passed.
+ */
+export function errorMessageVars(err: unknown, bcp47: string, tomorrow: string): TranslateVars | undefined {
   if (!(err instanceof ApiError) || !err.retryAt) return undefined
   const at = new Date(err.retryAt)
   if (Number.isNaN(at.getTime())) return undefined
-  return { time: at.toLocaleTimeString(bcp47, { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }) }
+  const time = at.toLocaleTimeString(bcp47, { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+  return { time: indiaDate(at.getTime()) === indiaDate(Date.now()) ? time : `${tomorrow.toLowerCase()} ${time}` }
 }
 
 /** An abort signal that fires after `ms`. AbortSignal.timeout is missing on old Android WebViews. */
@@ -86,10 +96,18 @@ export const api = {
   diagnose: (body: DiagnoseRequest) =>
     request<DiagnoseResult>(
       '/api/diagnose',
-      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
+      { method: 'POST', headers: { 'content-type': 'application/json', ...deviceHeader() }, body: JSON.stringify(body) },
       // Upload on 2G plus a careful look at the photo.
       120_000,
     ),
+  /** Thumbs up/down. Best effort: a lost vote must never bother the farmer. */
+  feedback: (body: FeedbackRequest) =>
+    fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...deviceHeader() },
+      body: JSON.stringify(body),
+      signal: timeoutSignal(15_000),
+    }).catch(() => undefined),
 }
 
 // The Worker can be silent for a while during price lookups and thinking, but not this long.
@@ -116,7 +134,7 @@ export async function* streamChat(body: ChatRequest, signal: AbortSignal): Async
     try {
       res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...deviceHeader() },
         body: JSON.stringify(body),
         signal: watchdog.signal,
       })

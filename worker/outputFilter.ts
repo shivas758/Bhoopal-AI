@@ -118,5 +118,10 @@ export function createOutputFilter(lang: Lang, emit: (text: string) => Promise<v
       buffer = ''
       await release(rest)
     },
+    /** Drops held-back text and starts afresh: the answer is being rewritten by another model. */
+    discard() {
+      buffer = ''
+      warned.clear()
+    },
   }
 }

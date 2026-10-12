@@ -1,3 +1,4 @@
+import { rest, restingNow } from './store'
 import { UpstreamError, nextPacificMidnight, upstreamFetch } from './util'
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
@@ -21,6 +22,8 @@ export interface GeminiContent {
 export interface GeminiChunk {
   candidates?: { content?: { parts?: GeminiPart[] }; finishReason?: string }[]
   promptFeedback?: { blockReason?: string }
+  /** An overloaded model can fail in the middle of a stream that started with HTTP 200. */
+  error?: { code?: number; message?: string; status?: string }
 }
 
 export interface GeminiRequest {
@@ -39,6 +42,11 @@ type Method = 'generateContent' | 'streamGenerateContent'
  * This map is per Worker isolate; other isolates rediscover the limit with one failed call each.
  */
 const restingUntil = new Map<string, number>()
+
+/** A model failed mid-stream (overloaded): skip it in this isolate for a minute. */
+export function pauseModel(model: string, seconds = 60) {
+  restingUntil.set(model, Math.max(restingUntil.get(model) ?? 0, Date.now() + seconds * 1000))
+}
 
 export const modelPool = (env: Env) =>
   String(env.GEMINI_MODELS ?? '')
@@ -121,6 +129,10 @@ function poolRetryAt(models: string[]) {
 
 /** Calls the best Gemini model that still has free quota, moving down the pool on rate limits or outages. */
 export async function callGemini(env: Env, method: Method, body: GeminiRequest, opts: GeminiCallOptions = {}): Promise<{ res: Response; model: string }> {
+  // Models another isolate already found out of quota today (shared store), so this one doesn't re-probe them.
+  for (const [service, until] of Object.entries(await restingNow(env.DB))) {
+    if (service.startsWith('gemini:') && until > (restingUntil.get(service.slice(7)) ?? 0)) restingUntil.set(service.slice(7), until)
+  }
   const now = Date.now()
   const all = opts.models ?? modelPool(env)
   const pool = all.filter((m) => (restingUntil.get(m) ?? 0) <= now && !opts.exclude?.includes(m))
@@ -134,15 +146,20 @@ export async function callGemini(env: Env, method: Method, body: GeminiRequest, 
 
     const info = parseError(await res.text().catch(() => ''))
     console.warn(`Gemini ${model} ${res.status}: ${info.summary}`)
-    if (res.status === 400) throw new UpstreamError(`Gemini 400: ${info.summary}`, 400)
+    // A 400 can be model-specific (a setting one model doesn't support): try the next model, which costs no
+    // quota, rather than failing the whole question.
     if (res.status === 429) {
-      // Daily quota: rest until the Pacific-midnight reset. Per-minute: a short pause.
-      restingUntil.set(model, info.daily ? nextPacificMidnight() : Date.now() + Math.min(info.retrySeconds ?? 30, 60) * 1000)
+      // Daily quota: rest until the Pacific-midnight reset (shared with every isolate). Per-minute: a short pause.
+      const until = info.daily ? nextPacificMidnight() : Date.now() + Math.min(info.retrySeconds ?? 30, 60) * 1000
+      restingUntil.set(model, until)
+      if (info.daily) await rest(env.DB, `gemini:${model}`, until)
     } else if (res.status === 404) {
-      restingUntil.set(model, Date.now() + 6 * 3600 * 1000) // retired or unavailable to this key
+      const until = Date.now() + 6 * 3600 * 1000 // retired or unavailable to this key
+      restingUntil.set(model, until)
+      await rest(env.DB, `gemini:${model}`, until)
     }
     lastError = new UpstreamError(`Gemini ${res.status}`, res.status)
-    if (![404, 429, 500, 503].includes(res.status)) break
+    if (![400, 404, 429, 500, 503].includes(res.status)) break
   }
   // Every model is resting: report when the first one is back, so the farmer gets a real time.
   const later = Date.now()

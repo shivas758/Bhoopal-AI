@@ -1,8 +1,20 @@
 import { Camera, ChevronDown, ImageUp, RotateCcw, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { KCC_PHONE } from '../../shared/schemes'
-import type { DiagnoseResult, Likelihood } from '../../shared/types'
-import { CallKcc, Card, ErrorNotice, ExperimentalBadge, Notice, PageHeader, Spinner, inputClass, primaryButton, secondaryButton } from '../components/ui'
+import type { DiagnoseResult, Likelihood, Vote } from '../../shared/types'
+import {
+  CallKcc,
+  Card,
+  ErrorNotice,
+  ExperimentalBadge,
+  Feedback,
+  Notice,
+  PageHeader,
+  Spinner,
+  inputClass,
+  primaryButton,
+  secondaryButton,
+} from '../components/ui'
 import type { MessageKey } from '../i18n'
 import { api } from '../lib/api'
 import { compressPhoto } from '../lib/image'
@@ -173,6 +185,7 @@ export function Diagnose() {
   const [error, setError] = useState<unknown>(null)
   const [badFormat, setBadFormat] = useState(false)
   const [result, setResult] = useState<DiagnoseResult | null>(session?.result ?? null)
+  const [vote, setVote] = useState<Vote | null>(null)
 
   useEffect(() => {
     saveSession({ photo: photo && { base64: photo.base64, mimeType: photo.mimeType }, crop, note, result })
@@ -220,6 +233,7 @@ export function Diagnose() {
   const reset = () => {
     setPhoto(null)
     setResult(null)
+    setVote(null)
     setError(null)
     setBadFormat(false)
     setNote('')
@@ -246,6 +260,14 @@ export function Diagnose() {
         ) : result && photo ? (
           <>
             <Result result={result} photo={photo.previewUrl} />
+            {/* Did the guess turn out right? Wrong photo checks must get noticed. */}
+            <Feedback
+              vote={vote ?? undefined}
+              onVote={(v) => {
+                setVote(v)
+                void api.feedback({ kind: 'photo', vote: v, lang })
+              }}
+            />
             <button onClick={reset} className={secondaryButton}>
               <RotateCcw className="size-5" /> {t('diagnose.again')}
             </button>

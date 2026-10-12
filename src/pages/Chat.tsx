@@ -2,10 +2,10 @@ import { Loader2, Mic, MicOff, Send, Square, Trash2, Volume2 } from 'lucide-reac
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { COMMODITIES } from '../../shared/commodities'
 import { KCC_PHONE } from '../../shared/schemes'
-import { MAX_HISTORY, MAX_MESSAGE_CHARS, type ChatIntent, type ChatMessage } from '../../shared/types'
-import { ErrorNotice, Notice, PageHeader } from '../components/ui'
+import { MAX_HISTORY, MAX_MESSAGE_CHARS, type ChatIntent, type ChatMessage, type Vote } from '../../shared/types'
+import { ErrorNotice, Feedback, Notice, PageHeader } from '../components/ui'
 import type { MessageKey } from '../i18n'
-import { ApiError, streamChat } from '../lib/api'
+import { ApiError, api, streamChat } from '../lib/api'
 import { answering, useOnline } from '../lib/hooks'
 import { Markdown } from '../lib/markdown'
 import { takeAsk, useRoute } from '../lib/router'
@@ -45,7 +45,14 @@ function savedMessages(): ChatMessage[] {
   if (!Array.isArray(raw)) return []
   return raw
     .filter((m): m is ChatMessage => Boolean(m) && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && m.text.trim() !== '')
-    .map((m) => ({ role: m.role, text: m.text, ...(typeof m.model === 'string' ? { model: m.model } : {}), ...(m.cut === true ? { cut: true } : {}) }))
+    .map((m) => ({
+      role: m.role,
+      text: m.text,
+      ...(typeof m.model === 'string' ? { model: m.model } : {}),
+      ...(m.cut === true ? { cut: true } : {}),
+      ...(typeof m.id === 'string' && m.id.length <= 16 ? { id: m.id } : {}),
+      ...(m.vote === 'up' || m.vote === 'down' ? { vote: m.vote } : {}),
+    }))
 }
 
 function savedDraft() {
@@ -165,8 +172,15 @@ export function Chat() {
       abortRef.current = controller
       let answer = ''
       let model: string | undefined
+      let answerId: string | undefined
       let cut = false
-      const reply = (): ChatMessage => ({ role: 'model', text: answer, ...(model ? { model } : {}), ...(cut ? { cut } : {}) })
+      const reply = (): ChatMessage => ({
+        role: 'model',
+        text: answer,
+        ...(model ? { model } : {}),
+        ...(answerId ? { id: answerId } : {}),
+        ...(cut ? { cut } : {}),
+      })
       // Stopped, failed or left with nothing written: take the question back into the box to try again.
       const giveBack = () => {
         setMessages(history.slice(0, -1))
@@ -196,8 +210,14 @@ export function Chat() {
             setToolName(event.name)
           } else if (event.type === 'meta') {
             model = event.model
+            answerId = event.id
           } else if (event.type === 'cut') {
             cut = true
+          } else if (event.type === 'reset') {
+            // The model failed mid-answer and another one is starting again.
+            answer = ''
+            setStatus('thinking')
+            setMessages([...history, reply()])
           } else if (event.type === 'error') {
             throw new ApiError(event.code, event.retryAt)
           }
@@ -305,6 +325,13 @@ export function Chat() {
     void send(input, { fromVoice: input.trim() !== '' && input.trim() === lastVoiceRef.current })
   }
 
+  const voteOn = (index: number, vote: Vote) => {
+    const m = messagesRef.current[index]
+    if (!m || m.vote) return
+    setMessages((prev) => prev.map((msg, j) => (j === index ? { ...msg, vote } : msg)))
+    void api.feedback({ kind: 'chat', vote, id: m.id, model: m.model, lang: settings.lang ?? 'en' })
+  }
+
   const busy = status !== 'idle'
   const clear = () => {
     if (!confirmClear) {
@@ -379,13 +406,16 @@ export function Chat() {
                       </span>
                     )
                   ) : (
-                    <button
-                      onClick={() => void readAloud(i, m.text)}
-                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 text-sm font-medium text-stone-700"
-                    >
-                      {speakingIndex === i ? <Square className="size-4" /> : <Volume2 className="size-4" />}
-                      {speakingIndex === i ? t('chat.stop') : t('chat.readAloud')}
-                    </button>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => void readAloud(i, m.text)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 text-sm font-medium text-stone-700"
+                      >
+                        {speakingIndex === i ? <Square className="size-4" /> : <Volume2 className="size-4" />}
+                        {speakingIndex === i ? t('chat.stop') : t('chat.readAloud')}
+                      </button>
+                      <Feedback vote={m.vote} onVote={(vote) => voteOn(i, vote)} />
+                    </div>
                   )}
                 </>
               ) : (

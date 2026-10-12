@@ -149,8 +149,24 @@ export function Weather() {
               </ul>
             </Card>
 
-            <p className="px-1 text-xs text-stone-500">
-              {t('weather.source')} · {t('common.updated', { time: formatDateTime(Date.parse(data.updatedAt), bcp47) })}
+            <p className="px-1 text-xs text-stone-600">
+              {/* MET Norway's licence asks for a link to the source and to CC BY 4.0. */}
+              {t('weather.source')
+                .split(/(MET Norway|CC BY 4\.0)/)
+                .map((part, i) =>
+                  part === 'MET Norway' ? (
+                    <a key={i} href="https://api.met.no/" target="_blank" rel="noopener noreferrer" className="underline">
+                      MET Norway
+                    </a>
+                  ) : part === 'CC BY 4.0' ? (
+                    <a key={i} href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" className="underline">
+                      CC BY 4.0
+                    </a>
+                  ) : (
+                    part
+                  ),
+                )}{' '}
+              · {t('common.updated', { time: formatDateTime(Date.parse(data.updatedAt), bcp47) })}
             </p>
           </>
         )}

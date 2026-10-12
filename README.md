@@ -32,16 +32,25 @@ Everything a farmer saves (language, location, crops, chats) stays in the phone'
 
 ### API
 
-| Route                                      | What                                                                                                               | Limit (per IP per minute) |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------- |
-| `GET /api/health`                          | `{ai, prices}`: which keys are configured                                                                          | –                         |
-| `GET /api/weather?lat&lon`                 | MET forecast on a 0.05° grid; India only                                                                           | 60 (`DATA_LIMITER`)       |
-| `GET /api/districts?state`                 | District list (Agmarknet names)                                                                                    | 60 (`DATA_LIMITER`)       |
-| `GET /api/prices?commodity&state&district` | Latest price per mandi, grouped by product form, with MSP                                                          | 60 (`PRICES_LIMITER`)     |
-| `POST /api/chat`                           | Server-sent events: `text`, `tool`, `meta` (model), `cut`, `error` (with `retryAt` when the AI is resting), `done` | 20 (`CHAT_LIMITER`)       |
-| `POST /api/diagnose`                       | Photo check (JSON)                                                                                                 | 30 (`PHOTO_LIMITER`)      |
+| Route                                      | What                                                                                                            | Limit (per IP per minute) |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `GET /api/health`                          | Keys configured, version, and the last upstream probe; **503** when both price sources are down                 | –                         |
+| `GET /api/weather?lat&lon`                 | MET forecast on a 0.05° grid; India only                                                                        | 60 (`DATA_LIMITER`)       |
+| `GET /api/districts?state`                 | District list (Agmarknet names)                                                                                 | 60 (`DATA_LIMITER`)       |
+| `GET /api/prices?commodity&state&district` | Latest price per mandi, grouped by product form, with MSP                                                       | 60 (`PRICES_LIMITER`)     |
+| `POST /api/chat`                           | Server-sent events: `text`, `tool`, `meta` (model, answer id), `cut`, `reset`, `error` (with `retryAt`), `done` | 20 (`CHAT_LIMITER`)       |
+| `POST /api/diagnose`                       | Photo check (JSON)                                                                                              | 30 (`PHOTO_LIMITER`)      |
+| `POST /api/feedback`                       | Thumbs up/down on an answer or photo check (to Analytics Engine)                                                | 60 (`DATA_LIMITER`)       |
 
-POST routes accept only `application/json`, reject `Sec-Fetch-Site: cross-site`, and cap bodies at 64 KB (chat) / 4 MB (photo). Installed phones keep old app bundles, so wire changes must be additive.
+POST routes accept only `application/json`, reject `Sec-Fetch-Site: cross-site`, and cap bodies at 64 KB (chat) / 4 MB (photo). Installed phones keep old app bundles, so wire changes must be additive (see [RELEASE.md](RELEASE.md)).
+
+### Shared store, crons and metrics (all on the free plan)
+
+- **D1** (`DB`, schema in `migrations/`): a cache shared by every Worker isolate (Agmarknet filters and rows), which Gemini models are out of quota today and whether data.gov.in is down (so a fresh isolate doesn't re-probe), **daily AI budgets** (`DAILY_LIMITS` in `wrangler.jsonc`: per phone, per IP and for photo checks in total; price buttons and cached answers are free), an **answer cache** (the same first question from a farmer with the same profile in the same quarter of the day is answered without the AI; never for live prices or weather), daily **price snapshots** and the **health status**.
+- **Cron triggers:** 8 PM IST saves every reported mandi price for 32 crops in AP, Telangana, Karnataka, Tamil Nadu and Kerala (one Agmarknet request per state and day). The price tool then adds a **7-day trend** and falls back to the saved snapshot, clearly dated, when Agmarknet and data.gov.in are both down. Every 30 minutes a probe checks Agmarknet, data.gov.in and MET Norway for `/api/health`, and makes every isolate skip a dead data.gov.in.
+- **Workers Cache** serves repeated `GET /api/weather`, `/api/districts` and `/api/prices` from Cloudflare's cache for their `max-age`.
+- **Analytics Engine** (`STATS`, dataset `bhoopal_events`): one point per answer, photo check and thumbs up/down (model, finish reason, language, state, outcome; never the farmer's text). Query it with the SQL API. Logs are structured JSON with the deployed version id.
+- **Monitoring:** point a free uptime monitor (e.g. UptimeRobot, 5-minute checks) at `/api/health` (it returns 503 when prices are down) and `/api/weather?lat=17.39&lon=78.49`. Never at `/api/chat` or `/api/diagnose`, which cost AI quota.
 
 ## Setup
 
@@ -52,19 +61,26 @@ POST routes accept only `application/json`, reject `Sec-Fetch-Site: cross-site`,
 3. Run the app:
    ```sh
    npm install
-   npm run dev          # http://localhost:5173
-   npm test             # unit tests (Vitest): safety filters, crop matching, price answers, read-aloud
-   npm run typecheck
-   npm run types        # regenerate worker-configuration.d.ts after editing wrangler.jsonc
+   npm run db:migrate:local   # create the local D1 tables (once, and after new migrations)
+   npm run dev                # http://localhost:5173
+   npm run check              # Worker types, typecheck, lint (oxlint), format (Prettier), unit tests: what CI runs
+   npm run golden             # real AI questions in 6 languages against `npm run dev` (costs quota)
+   npm run types              # regenerate worker-configuration.d.ts after editing wrangler.jsonc
    ```
+   With `npm run dev` running, trigger the crons at `/cdn-cgi/handler/scheduled?cron=30+14+*+*+*` (price snapshot) and `?cron=*/30+*+*+*+*` (health probe).
 
 ## Deploy (Cloudflare Workers free plan)
 
+Releases are manual (GitHub Actions only checks); follow [RELEASE.md](RELEASE.md). First time:
+
 ```sh
 npx wrangler login
-npx wrangler secret put GEMINI_API_KEY
-npx wrangler secret put DATA_GOV_API_KEY
-npm run deploy
+npx wrangler d1 create bhoopal && npx wrangler d1 create bhoopal-staging   # then put the ids in wrangler.jsonc
+npx wrangler secret put GEMINI_API_KEY        # and again with --env staging
+npx wrangler secret put DATA_GOV_API_KEY      # and again with --env staging
+npm run db:migrate:staging && npm run db:migrate
+npm run deploy:staging    # bhoopal-staging.<account>.workers.dev + smoke test
+npm run deploy            # production + smoke test
 ```
 
 Before going live, edit `USER_AGENT` in `wrangler.jsonc` to include your site URL or email. MET Norway requires this.
@@ -74,7 +90,7 @@ Before going live, edit `USER_AGENT` in `wrangler.jsonc` to include your site UR
 - **Gemini free tier = 20 requests per day per model** (measured Oct 2026; check https://ai.dev/rate-limit).
   - Most questions use 1 request, because the Worker looks prices, weather and schemes up first. A question needing a lookup the Worker didn't foresee uses 2–3 (at most 2 tool rounds); a retry after a model goes quiet can make it 4. Price buttons and the Home price card use none.
   - The Worker rotates through a pool of models (`GEMINI_MODELS` in `wrangler.jsonc`, best first) and rests each one until its quota resets at midnight Pacific time (12:30/1:30 PM IST). When all are resting, the app tells the farmer the time the AI is back and offers the Kisan Call Centre. That gives roughly **60–90 farmer questions per day in total**: fine for a pilot, not for a public launch.
-  - The logs show each answer as `chat <id> answered by <model> …; N AI call(s), M tool round(s)` (the id is a hash, never the farmer's text).
+  - Every answer is logged as `{event: 'chat', outcome, model, finish, calls, toolRounds, …}` (the id is a hash, never the farmer's text). An overloaded model sometimes fails in the middle of a streamed answer; the Worker then restarts the answer once on another model (`reset` event).
   - For real use, enable billing on the Google AI Studio project. No code changes are needed. Flash models cost a fraction of a rupee per question, and paid-tier prompts are not used to train Google's models (better for farmers' privacy).
   - The Worker also rate-limits each IP (`CHAT_LIMITER`, `PHOTO_LIMITER`) and sends only the last 12 messages.
   - Pool order comes from testing on real farmer questions: `gemini-3.6-flash` was most accurate. `gemini-3.8-flash` is excluded because it often stopped mid-answer after tool calls. Older models had to be told explicitly which pesticides are banned (see `BANNED_PESTICIDES` in `worker/prompts.ts`).
@@ -86,9 +102,9 @@ Before going live, edit `USER_AGENT` in `wrangler.jsonc` to include your site UR
 
   These endpoints are undocumented and may change: if prices fail, check `api.agmarknet.gov.in/v1/dashboard-data/` first. The CAPTCHA-protected report endpoints are deliberately not used.
 
-- **MET Norway:** coordinates are rounded to a 0.05° grid (~5 km, India only) and responses are cached for 30 minutes.
-- **Cloudflare free plan:** 100k requests/day and 10 ms CPU per request. Static files don't count against it, because the Worker only runs for `/api/*`. data.gov.in parsing is capped at 2,000 rows per state to stay inside the CPU limit.
-- **Cache:** upstream data is cached in each Worker isolate's memory. The Cache API calls in `cached()` (`worker/util.ts`) are a no-op on `*.workers.dev`, so until a shared store is added (plan P2.2/P2.3), each isolate fetches on its own. Bump `CACHE_VERSION` whenever a cached value's shape changes. The app's own offline copies are versioned too (`OFFLINE_VERSION` in `src/lib/storage.ts`).
+- **MET Norway:** coordinates are rounded to a 0.05° grid (~5 km, India only). Forecasts are kept until MET's `Expires` time (at least 15 minutes) and refreshed with `If-Modified-Since`, as MET's terms ask; the app links the source and the CC BY 4.0 licence.
+- **Cloudflare free plan:** 100k requests/day and 10 ms CPU per request; with Workers Cache on, static files count towards the 100k too. data.gov.in parsing is capped at 2,000 rows per state to stay inside the CPU limit. D1: 5M rows read / 100k written per day. Cron triggers: 5 per account (this app uses 2, staging none). Analytics Engine: 100k points/day.
+- **Cache:** upstream data is cached in each isolate's memory, and Agmarknet data also in D1 so all isolates share it (`cached()` in `worker/util.ts`; weather and whole-state data.gov.in lists stay in memory only). Bump `CACHE_VERSION` whenever a cached value's shape changes. The app's own offline copies are versioned too (`OFFLINE_VERSION` in `src/lib/storage.ts`).
 
 ## Safety decisions
 

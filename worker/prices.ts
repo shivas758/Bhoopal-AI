@@ -3,6 +3,7 @@ import { commodityForRecord, commodityMatches, findCommodity, normalizeName } fr
 import { mspFor } from '../shared/msp'
 import { STATES, findState, type IndianState } from '../shared/states'
 import { agmarknetCommodities, agmarknetDistricts, agmarknetMarketPrices, agmarknetStateSummary } from './agmarknet'
+import { readSnapshot, rest, restingNow } from './store'
 import { BadRequest, UpstreamError, cached, indiaNow, json, upstreamFetch } from './util'
 
 // "Current Daily Price of Various Commodities from Various Markets (Mandi)" – Agmarknet on data.gov.in.
@@ -63,6 +64,23 @@ async function fetchPage(apiKey: string, filter: string, stateName: string, offs
   return { records: body.records, total: Number(body.total) || body.records.length }
 }
 
+/** Health probe: one tiny data.gov.in request. Throws when the service is down or answers nonsense. */
+export async function dataGovProbe(env: Env): Promise<string> {
+  if (!env.DATA_GOV_API_KEY) throw new Error('no DATA_GOV_API_KEY')
+  const url = new URL(API)
+  url.searchParams.set('api-key', env.DATA_GOV_API_KEY)
+  url.searchParams.set('format', 'json')
+  url.searchParams.set('limit', '1')
+  const res = await upstreamFetch('data.gov.in', url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
+  if (!res.ok) throw new UpstreamError(`data.gov.in ${res.status}`)
+  const body = (await res.json().catch(() => null)) as { records?: unknown[]; total?: number | string } | null
+  if (!Array.isArray(body?.records)) throw new UpstreamError('data.gov.in: no records field')
+  return `${body.total ?? '?'} records today`
+}
+
+/** After a failed probe, every isolate skips data.gov.in for a while instead of waiting on it per question. */
+export const restDataGov = (env: Env, minutes: number) => rest(env.DB, DATA_GOV, Date.now() + minutes * 60_000)
+
 async function loadState(apiKey: string, state: IndianState) {
   // The API has accepted both `filters[state]` and `filters[state.keyword]` over time, and
   // Agmarknet's state spellings vary ("Chattisgarh"), so try each combination until one has data.
@@ -84,15 +102,22 @@ async function loadState(apiKey: string, state: IndianState) {
 
 const dataGovState = (env: Env, state: IndianState) => cached(`prices:${state.id}`, TTL_SECONDS, () => loadState(env.DATA_GOV_API_KEY!, state))
 
-// After a failure, skip data.gov.in for a while so farmers don't wait on a dead server for every question.
+// After a failure, skip data.gov.in for a while (in every isolate, via the shared store) so farmers don't
+// wait on a dead server for every question.
 const DATA_GOV_BACKOFF_MS = 5 * 60 * 1000
+const DATA_GOV = 'data.gov.in'
 let dataGovDownUntil = 0
 
-const dataGovUsable = (env: Env) => Boolean(env.DATA_GOV_API_KEY) && Date.now() >= dataGovDownUntil
+async function dataGovUsable(env: Env) {
+  if (!env.DATA_GOV_API_KEY) return false
+  const shared = (await restingNow(env.DB))[DATA_GOV] ?? 0
+  return Date.now() >= Math.max(dataGovDownUntil, shared)
+}
 
-function markDataGovDown(err: unknown) {
+async function markDataGovDown(env: Env, err: unknown) {
   dataGovDownUntil = Date.now() + DATA_GOV_BACKOFF_MS
   console.warn(`data.gov.in unavailable, using Agmarknet 2.0 for ${DATA_GOV_BACKOFF_MS / 60000} min: ${err instanceof Error ? err.message : String(err)}`)
+  await rest(env.DB, DATA_GOV, dataGovDownUntil)
 }
 
 const sameName = (a: string, b: string) => normalizeName(a) === normalizeName(b)
@@ -105,11 +130,11 @@ export async function handleDistricts(url: URL, env: Env): Promise<Response> {
   try {
     names = await agmarknetDistricts(env, state)
   } catch (err) {
-    if (!dataGovUsable(env)) throw err
+    if (!(await dataGovUsable(env))) throw err
     try {
       names = [...new Set((await dataGovState(env, state)).map((r) => r.district))]
     } catch (fallbackErr) {
-      markDataGovDown(fallbackErr)
+      await markDataGovDown(env, fallbackErr)
       throw err
     }
   }
@@ -141,7 +166,7 @@ type CropRow = PriceRow & { commodity: string }
 
 /** Per-mandi rows from data.gov.in, if it's up and has this crop here. */
 async function dataGovRows(env: Env, state: IndianState, district: string | undefined, isCrop: (name: string) => boolean): Promise<CropRow[]> {
-  if (!dataGovUsable(env)) return []
+  if (!(await dataGovUsable(env))) return []
   try {
     const records = (await dataGovState(env, state)).filter((r) => isCrop(r.commodity))
     const inDistrict = district ? records.filter((r) => sameName(r.district, district)) : records
@@ -159,7 +184,7 @@ async function dataGovRows(env: Env, state: IndianState, district: string | unde
       ...(r.modal < r.min || r.modal > r.max ? { suspicious: true } : {}),
     }))
   } catch (err) {
-    markDataGovDown(err)
+    await markDataGovDown(env, err)
     return []
   }
 }
@@ -168,6 +193,16 @@ function withoutCommodity(r: CropRow): PriceRow {
   const row: PriceRow & { commodity?: string } = { ...r }
   delete row.commodity
   return row
+}
+
+const daysBefore = (isoDate: string, days: number) => new Date(Date.parse(`${isoDate}T00:00:00Z`) - days * 86400_000).toISOString().slice(0, 10)
+
+/** Typical (median) price per day from saved snapshot rows of one product form; needs at least 2 days. */
+export function trend7d(rows: { date: string; modal: number }[]): { date: string; typicalPrice: number; mandis: number }[] | undefined {
+  const byDate = new Map<string, number[]>()
+  for (const r of rows) byDate.set(r.date, [...(byDate.get(r.date) ?? []), r.modal])
+  if (byDate.size < 2) return undefined
+  return [...byDate].sort(([a], [b]) => a.localeCompare(b)).map(([date, prices]) => ({ date, typicalPrice: median(prices), mandis: prices.length }))
 }
 
 function median(values: number[]) {
@@ -232,35 +267,69 @@ export async function mandiPricesTool(
   const isCrop = (name: string) => (crop ? commodityForRecord(name)?.id === crop.id : normalizeName(name).startsWith(normalizeName(commodity)))
 
   // Both lookups are independent; a dead data.gov.in must not delay the Agmarknet 2.0 fallback.
+  let agmarknetDown = false
   const [govRows, ids] = await Promise.all([
     dataGovRows(env, state, district, isCrop),
-    agmarknetCommodities(env, crop, commodity).catch(() => [] as { id: number; name: string }[]),
+    agmarknetCommodities(env, crop, commodity).catch((err: unknown) => {
+      agmarknetDown = true
+      console.warn(`Agmarknet commodity list failed: ${err instanceof Error ? err.message : String(err)}`)
+      return [] as { id: number; name: string }[]
+    }),
   ])
   const cmdtIds = ids.map((c) => c.id)
   // MSP and the state average put mandi prices in context ("below MSP: sell at a procurement centre").
   const summaryPromise = cmdtIds.length ? agmarknetStateSummary(env, state, cmdtIds).catch(() => []) : Promise.resolve([])
+  const today = indiaNow().toISOString().slice(0, 10)
+  // Saved daily snapshots (cron, South Indian states): a 7-day trend, and a fallback when both sources are down.
+  const snapshotPromise = readSnapshot(env.DB, state.id, ids.length ? ids.map((c) => c.name) : undefined, daysBefore(today, 7))
 
   let source = 'Agmarknet via data.gov.in'
   let rows: CropRow[] = govRows
   let scope: 'district' | 'state' = district && rows.some((r) => sameName(r.district, district)) ? 'district' : 'state'
-  if (!rows.length) {
+  let fromSnapshot: string | undefined
+  if (!rows.length && !agmarknetDown) {
     source = 'Agmarknet 2.0 (agmarknet.gov.in)'
     if (!cmdtIds.length) return { error: `"${commodity}" was not found among mandi commodities. Ask the farmer for another name of the crop.` }
-    const local = district ? await agmarknetMarketPrices(env, state, district, cmdtIds) : undefined
-    if (local?.districtFound && local.rows.length) {
-      rows = local.rows
-      scope = 'district'
-    } else {
-      rows = (await agmarknetMarketPrices(env, state, undefined, cmdtIds)).rows
-      scope = 'state'
+    try {
+      const local = district ? await agmarknetMarketPrices(env, state, district, cmdtIds) : undefined
+      if (local?.districtFound && local.rows.length) {
+        rows = local.rows
+        scope = 'district'
+      } else {
+        rows = (await agmarknetMarketPrices(env, state, undefined, cmdtIds)).rows
+        scope = 'state'
+      }
+    } catch (err) {
+      agmarknetDown = true
+      console.warn(`Agmarknet prices failed: ${err instanceof Error ? err.message : String(err)}`)
     }
+  }
+
+  const snapshot = (await snapshotPromise).filter((r) => isCrop(r.commodity))
+  if (!rows.length && agmarknetDown) {
+    // Both live sources failed: the latest saved snapshot is better than nothing, clearly dated.
+    const latest = snapshot.reduce((max, r) => (r.date > max ? r.date : max), '')
+    const saved = snapshot
+      .filter((r) => r.date === latest)
+      .map((r): CropRow => ({ market: r.market, district: r.district, commodity: r.commodity, date: r.date, modalPrice: r.modal, unit: r.unit }))
+    if (!saved.length)
+      return {
+        error:
+          'The government mandi price services are not responding right now. Tell the farmer, and suggest checking again later or calling the Kisan Call Centre.',
+      }
+    const inDistrict = district ? saved.filter((r) => sameName(r.district, district)) : []
+    rows = inDistrict.length ? inDistrict : saved
+    scope = inDistrict.length ? 'district' : 'state'
+    fromSnapshot = latest
+    source = `BhooPal's saved Agmarknet snapshot of ${latest} (live services not responding)`
   }
 
   const summary = await summaryPromise
   const summaryMsp = summary.find((s) => s.msp)
   const average = summary.find((s) => s.stateAverage)
-  const tableMsp = crop ? mspFor(crop.id, indiaNow().toISOString().slice(0, 10)) : undefined
+  const tableMsp = crop ? mspFor(crop.id, today) : undefined
   const forms = priceForms(rows, scope)
+  const trend = forms[0] ? trend7d(snapshot.filter((r) => r.commodity === forms[0].name)) : undefined
 
   return {
     commodity: crop?.id ?? commodity,
@@ -271,12 +340,21 @@ export async function mandiPricesTool(
     // Agmarknet's figure is the live one; our table only fills in when it's missing.
     ...(summaryMsp?.msp ? { msp: { price: summaryMsp.msp, ...(tableMsp ? { season: tableMsp.season } : {}) } } : tableMsp ? { msp: tableMsp } : {}),
     ...(average?.stateAverage ? { stateAverage: { price: average.stateAverage, date: average.date } } : {}),
+    ...(trend ? { trend7d: trend } : {}),
+    ...(fromSnapshot ? { fromSnapshot } : {}),
     note:
-      district && scope === 'state' && forms.length
-        ? `No mandi in ${district} district reported this crop in the last few days; showing a sample of mandis across ${state.id}, nearest the typical price.`
-        : forms.length
-          ? undefined
-          : 'No mandi in this area reported this crop in the last few days.',
+      [
+        fromSnapshot && `Live mandi data is not available right now; these are saved prices from ${fromSnapshot}. Say so to the farmer.`,
+        district && scope === 'state' && forms.length
+          ? `No mandi in ${district} district reported this crop in the last few days; showing a sample of mandis across ${state.id}, nearest the typical price.`
+          : forms.length
+            ? undefined
+            : 'No mandi in this area reported this crop in the last few days.',
+        trend &&
+          'trend7d = the state-wide typical price on each recent day, from saved daily snapshots. It shows the recent direction; it is not a prediction.',
+      ]
+        .filter(Boolean)
+        .join(' ') || undefined,
     howToRead:
       "modalPrice = the price most of the produce sold at, at that mandi on that date; typicalPrice = the median across mandis. Check each row's unit (usually Rs./Quintal = per 100 kg). Rows marked suspicious are probably reporting errors. msp = Minimum Support Price in Rs./Quintal.",
     source,

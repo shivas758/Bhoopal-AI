@@ -1,6 +1,7 @@
-import { AlertTriangle, ArrowLeft, Info, Loader2, Phone, WifiOff } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Info, Loader2, Phone, ThumbsDown, ThumbsUp, WifiOff } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { KCC_PHONE } from '../../shared/schemes'
+import type { Vote } from '../../shared/types'
 import { errorMessageKey, errorMessageVars } from '../lib/api'
 import { useOnline } from '../lib/hooks'
 import { go, type Route } from '../lib/router'
@@ -85,17 +86,35 @@ export function CallLinks({ phones }: { phones: string[] }) {
 export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   const { t, bcp47 } = useT()
   const key = errorMessageKey(error)
+  const waiting = key === 'error.resting' || key === 'error.daily_limit'
   return (
-    <Notice tone={key === 'error.resting' ? 'warn' : 'danger'} alert>
-      <p>{t(key, { kcc: KCC_PHONE, ...errorMessageVars(error, bcp47) })}</p>
+    <Notice tone={waiting ? 'warn' : 'danger'} alert>
+      <p>{t(key, { kcc: KCC_PHONE, ...errorMessageVars(error, bcp47, t('weather.tomorrow')) })}</p>
       {key === 'error.blocked' && <CallLinks phones={['108', '112', KCC_PHONE]} />}
-      {key === 'error.resting' && <CallLinks phones={[KCC_PHONE]} />}
+      {waiting && <CallLinks phones={[KCC_PHONE]} />}
       {onRetry && (
         <button onClick={onRetry} className="mt-2 font-semibold underline">
           {t('common.retry')}
         </button>
       )}
     </Notice>
+  )
+}
+
+/** "Helpful / Wrong" under an answer or a photo check, so systematically wrong answers get noticed. */
+export function Feedback({ vote, onVote }: { vote?: Vote; onVote: (vote: Vote) => void }) {
+  const { t } = useT()
+  if (vote) return <p className="text-sm text-stone-600">{t('feedback.thanks')}</p>
+  const button = 'inline-flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 text-sm font-medium text-stone-700 active:bg-stone-200'
+  return (
+    <span className="flex flex-wrap gap-2">
+      <button onClick={() => onVote('up')} className={button}>
+        <ThumbsUp className="size-4" /> {t('feedback.helpful')}
+      </button>
+      <button onClick={() => onVote('down')} className={button}>
+        <ThumbsDown className="size-4" /> {t('feedback.wrong')}
+      </button>
+    </span>
   )
 }
 

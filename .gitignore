@@ -5,6 +5,7 @@ dev-dist
 .dev.vars*
 !.dev.vars.example
 .env*
+!.env.staging
 *.local
 *.tsbuildinfo
 .DS_Store

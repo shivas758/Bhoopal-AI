@@ -1,0 +1,35 @@
+# Checks every push and pull request. No secrets and no deploys: releases stay manual
+# (`npm run deploy:staging`, then `npm run deploy`; see RELEASE.md).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Worker types match wrangler.jsonc
+        run: npx wrangler types --check
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - name: Build the app and the Worker
+        run: npx vite build

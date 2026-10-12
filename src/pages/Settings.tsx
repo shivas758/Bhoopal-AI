@@ -5,11 +5,12 @@ import { CropPicker } from '../components/CropPicker'
 import { Card, PageHeader, inputClass } from '../components/ui'
 import { api } from '../lib/api'
 import { useOfflineData } from '../lib/hooks'
+import { formatDateTime } from '../lib/format'
 import { clearAll } from '../lib/storage'
 import { useSettings, useT } from '../settings'
 
 export function Settings() {
-  const { t, lang } = useT()
+  const { t, lang, bcp47 } = useT()
   const { settings, update } = useSettings()
   const [confirmClear, setConfirmClear] = useState(false)
   const [cleared, setCleared] = useState(false)
@@ -18,7 +19,8 @@ export function Settings() {
 
   const clear = () => {
     if (!confirmClear) return setConfirmClear(true)
-    clearAll(['settings'])
+    // Keep the phone's id: clearing data must not reset its daily share of the free AI.
+    clearAll(['settings', 'device'])
     update({ coords: undefined })
     setConfirmClear(false)
     setCleared(true)
@@ -100,7 +102,9 @@ export function Settings() {
           <h2 className="text-base font-bold">{t('settings.about')}</h2>
           <p>{t('settings.aboutBody')}</p>
           <p>{t('settings.privacy')}</p>
-          <p className="text-xs text-stone-500">BhooPal v{__APP_VERSION__}</p>
+          <p className="text-xs text-stone-600">
+            BhooPal v{__APP_VERSION__} · {formatDateTime(Date.parse(__BUILD__), bcp47)}
+          </p>
         </Card>
 
         <button onClick={clear} className="rounded-xl border border-red-300 bg-white px-4 py-3 font-semibold text-red-700">

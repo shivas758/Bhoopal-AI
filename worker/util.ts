@@ -1,4 +1,5 @@
 import type { ApiErrorBody, ApiErrorCode } from '../shared/types'
+import { readCache, writeCache } from './store'
 
 /** JSON response. API data is per-farmer and changes often, so it is not cached unless a route says so. */
 export const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
@@ -41,30 +42,41 @@ export async function upstreamFetch(service: string, input: RequestInfo | URL, i
 }
 
 // Bump whenever the shape of a cached value changes, so a deploy never reads the old shape back.
-const CACHE_VERSION = 3
+const CACHE_VERSION = 4
 const MAX_MEMORY_ENTRIES = 300
 
-const memory = new Map<string, { expires: number; value: Promise<unknown> }>()
+const memory = new Map<string, { expires: number; value: Promise<unknown>; token: object }>()
+
+export interface CacheOptions {
+  /**
+   * Also keep the value in D1, shared by every Worker isolate. For small values that are slow or rate-limited
+   * upstream (Agmarknet filters and rows). Large or very local values (whole-state data.gov.in lists, weather
+   * per 5 km cell) stay in memory only.
+   */
+  shared?: D1Database
+}
 
 /**
- * Caches a loader's JSON result in this isolate's memory and in the Cloudflare Cache API.
- * Free upstream APIs have tight quotas, so every farmer in a district should share one fetch.
- * (The Cache API is a no-op on *.workers.dev; memory still helps there.)
+ * Caches a loader's JSON result: this isolate's memory first, then (optionally) the shared D1 store, then the
+ * upstream. Free upstream APIs have tight quotas, so every farmer in a district should share one fetch.
+ * `ttl` may depend on the value (e.g. MET Norway's Expires header).
  */
-export function cached<T>(key: string, ttlSeconds: number, load: () => Promise<T>): Promise<T> {
+export function cached<T>(key: string, ttl: number | ((value: T) => number), load: () => Promise<T>, opts: CacheOptions = {}): Promise<T> {
   const now = Date.now()
   const hit = memory.get(key)
   if (hit && hit.expires > now) return hit.value as Promise<T>
 
-  const cacheUrl = `https://cache.bhoopal.internal/v${CACHE_VERSION}/${encodeURIComponent(key)}`
+  const sharedKey = `v${CACHE_VERSION}:${key}`
+  // Identifies this load, so a late result never extends a newer entry for the same key.
+  const token = {}
   const value = (async () => {
-    const stored = await caches.default.match(cacheUrl).catch(() => undefined)
-    if (stored) return (await stored.json()) as T
+    const stored = await readCache<T>(opts.shared, sharedKey, now)
+    if (stored !== undefined) return stored
     const fresh = await load()
-    const response = new Response(JSON.stringify(fresh), {
-      headers: { 'content-type': 'application/json', 'cache-control': `max-age=${ttlSeconds}` },
-    })
-    await caches.default.put(cacheUrl, response).catch(() => {})
+    const seconds = typeof ttl === 'number' ? ttl : ttl(fresh)
+    const entry = memory.get(key)
+    if (entry?.token === token) entry.expires = Date.now() + seconds * 1000
+    await writeCache(opts.shared, sharedKey, fresh, Date.now() + seconds * 1000)
     return fresh
   })()
 
@@ -74,8 +86,11 @@ export function cached<T>(key: string, ttlSeconds: number, load: () => Promise<T
     for (const [k, v] of memory) if (v.expires <= now) memory.delete(k)
     if (memory.size >= MAX_MEMORY_ENTRIES) memory.delete(memory.keys().next().value!)
   }
-  memory.set(key, { expires: now + ttlSeconds * 1000, value })
-  value.catch(() => memory.delete(key))
+  // Until the loader finishes, a dynamic TTL isn't known: concurrent callers share this pending promise.
+  memory.set(key, { expires: now + (typeof ttl === 'number' ? ttl : 60) * 1000, value, token })
+  value.catch(() => {
+    if (memory.get(key)?.token === token) memory.delete(key)
+  })
   return value
 }
 
