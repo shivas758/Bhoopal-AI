@@ -1,24 +1,35 @@
-import type { ApiErrorCode } from '../shared/types'
+import type { ApiErrorBody, ApiErrorCode } from '../shared/types'
 
+/** JSON response. API data is per-farmer and changes often, so it is not cached unless a route says so. */
 export const json = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', ...headers },
+    headers: { 'content-type': 'application/json; charset=utf-8', 'x-content-type-options': 'nosniff', 'cache-control': 'no-store', ...headers },
   })
 
-export const apiError = (code: ApiErrorCode, status: number) => json({ error: code }, status)
+export const apiError = (code: ApiErrorCode, status: number, extra: Omit<ApiErrorBody, 'error'> = {}) =>
+  json({ error: code, ...extra } satisfies ApiErrorBody, status)
 
 /** Thrown when a free upstream service (data.gov.in, MET Norway, Gemini) fails. */
 export class UpstreamError extends Error {
   constructor(
     message: string,
     readonly status = 502,
+    /** When the service should work again (ms since epoch), e.g. when Gemini's daily free quota resets. */
+    readonly retryAt?: number,
   ) {
     super(message)
   }
 }
 
-export class BadRequest extends Error {}
+export class BadRequest extends Error {
+  constructor(
+    message: string,
+    readonly status = 400,
+  ) {
+    super(message)
+  }
+}
 
 /** fetch() that reports network failures (refused, timeout, DNS) as an upstream outage, not our bug. */
 export async function upstreamFetch(service: string, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -30,7 +41,8 @@ export async function upstreamFetch(service: string, input: RequestInfo | URL, i
 }
 
 // Bump whenever the shape of a cached value changes, so a deploy never reads the old shape back.
-const CACHE_VERSION = 2
+const CACHE_VERSION = 3
+const MAX_MEMORY_ENTRIES = 300
 
 const memory = new Map<string, { expires: number; value: Promise<unknown> }>()
 
@@ -56,13 +68,37 @@ export function cached<T>(key: string, ttlSeconds: number, load: () => Promise<T
     return fresh
   })()
 
+  // Re-inserting moves the key to the end, so the first key is always the least recently stored.
+  memory.delete(key)
+  if (memory.size >= MAX_MEMORY_ENTRIES) {
+    for (const [k, v] of memory) if (v.expires <= now) memory.delete(k)
+    if (memory.size >= MAX_MEMORY_ENTRIES) memory.delete(memory.keys().next().value!)
+  }
   memory.set(key, { expires: now + ttlSeconds * 1000, value })
   value.catch(() => memory.delete(key))
-  if (memory.size > 300) memory.delete(memory.keys().next().value!)
   return value
 }
 
-/** Today's date in India, independent of where the Worker runs. */
+/** Today's date in India, independent of where the Worker runs. Read it with getUTC*() methods. */
 export function indiaNow() {
   return new Date(Date.now() + 5.5 * 3600 * 1000)
+}
+
+const pacific = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Los_Angeles',
+  hourCycle: 'h23',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+})
+
+/**
+ * Next midnight in California (ms since epoch): when Gemini's free per-day quotas reset (~12:30 or 1:30 PM IST).
+ * Google's own retryDelay for daily limits is unreliable, so we compute it.
+ */
+export function nextPacificMidnight(now = Date.now()) {
+  const parts = Object.fromEntries(pacific.formatToParts(now).map((p) => [p.type, p.value]))
+  const sinceMidnight = (Number(parts.hour) * 3600 + Number(parts.minute) * 60 + Number(parts.second)) * 1000 + (now % 1000)
+  // Two minutes' grace so the first request after the reset doesn't land just before it.
+  return now - sinceMidnight + 24 * 3600 * 1000 + 2 * 60 * 1000
 }

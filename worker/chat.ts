@@ -1,18 +1,23 @@
 import { HELPLINES, SCHEMES, SCHEMES_CHECKED } from '../shared/schemes'
+import { DEFAULT_AGRI_OFFICE, STATE_AGRI_INFO } from '../shared/stateSchemes'
 import { findState } from '../shared/states'
-import { isLang, type ChatEvent, type ChatRequest } from '../shared/types'
-import { callGemini, readGeminiStream, toolHistoryAsText, type GeminiContent, type GeminiPart } from './gemini'
+import { MAX_HISTORY, MAX_MESSAGE_CHARS, isLang, type ChatEvent, type ChatIntent, type ChatMessage, type ChatRequest, type Lang, type PriceResult } from '../shared/types'
+import { callGemini, readGeminiStream, toolHistoryAsText, toolResultText, type GeminiContent, type GeminiPart } from './gemini'
+import { detectIntents } from './intents'
+import { createOutputFilter } from './outputFilter'
+import { priceAnswer } from './priceAnswer'
 import { mandiPricesTool } from './prices'
 import { chatSystemPrompt } from './prompts'
-import { BadRequest, UpstreamError, apiError } from './util'
-import { weatherTool } from './weather'
+import { BadRequest, UpstreamError, apiError, indiaNow } from './util'
+import { inIndia, weatherTool } from './weather'
 
-const MAX_HISTORY = 12
-const MAX_TEXT = 4000
-// Rounds of tool calls before the model must answer (e.g. prices for two crops, then weather).
-const MAX_TOOL_ROUNDS = 3
+// Rounds of tool calls before the model must answer (e.g. prices for two crops, then weather). With the
+// Worker looking data up in advance, most questions need no tool round at all.
+const MAX_TOOL_ROUNDS = 2
 // Indic scripts use ~3-4x the tokens of English, and thinking tokens share this budget.
-const MAX_OUTPUT_TOKENS = 4096
+const MAX_OUTPUT_TOKENS = 8192
+// A weather lookup done in advance must never hold up the answer for long.
+const PREFETCH_WEATHER_MS = 2500
 
 const TOOLS = [
   {
@@ -26,7 +31,8 @@ const TOOLS = [
           properties: {
             commodity: {
               type: 'STRING',
-              description: 'Crop name in English, e.g. Tomato, Onion, Paddy, Cotton, Groundnut, Dry Chillies, Turmeric, Banana, Coconut, Arecanut, Maize',
+              description:
+                'Crop name in English, e.g. Tomato, Onion, Paddy, Cotton, Groundnut, Dry Chillies, Green Chilli, Turmeric, Banana, Coconut, Arecanut, Maize, Cashewnut, Coffee, Horse gram, Jasmine',
             },
             state: { type: 'STRING', description: "Indian state in English. Omit to use the farmer's state." },
             district: { type: 'STRING', description: "District in English. Omit to use the farmer's district." },
@@ -42,61 +48,110 @@ const TOOLS = [
       {
         name: 'get_scheme_info',
         description:
-          'Verified details of central government farmer schemes (PM-KISAN, PMFBY crop insurance, Kisan Credit Card, Soil Health Card, e-NAM, PM-KUSUM, KVK) and free helpline numbers.',
+          "Details of central government farmer schemes (PM-KISAN, PMFBY crop insurance, Kisan Credit Card, Soil Health Card, e-NAM, PM-KUSUM, KVK), the farmer's state schemes and where to confirm them, and free helpline numbers.",
       },
     ],
   },
 ]
 
-function parseRequest(body: unknown): ChatRequest {
-  const req = body as Partial<ChatRequest>
-  if (!req || !Array.isArray(req.messages) || !req.messages.length || !isLang(req.lang)) throw new BadRequest('invalid chat request')
-  const messages = req.messages
-    .filter((m) => m && typeof m.text === 'string' && m.text.trim())
-    .slice(-MAX_HISTORY)
-    .map((m) => ({ role: m.role === 'model' ? ('model' as const) : ('user' as const), text: m.text.slice(0, MAX_TEXT) }))
-  if (messages.at(-1)?.role !== 'user') throw new BadRequest('last message must be from the user')
-  const str = (v: unknown) => (typeof v === 'string' && v.length < 80 ? v : undefined)
-  const crops = Array.isArray(req.crops) ? req.crops.filter((c): c is string => typeof c === 'string' && c.length < 60).slice(0, 30) : []
-  const coords =
-    req.coords && Number.isFinite(req.coords.lat) && Number.isFinite(req.coords.lon) ? { lat: req.coords.lat, lon: req.coords.lon } : undefined
-  return { messages, lang: req.lang, state: str(req.state), district: str(req.district), crops, coords }
+export interface ParsedChat extends ChatRequest {
+  /** Older messages were dropped, so the model may be missing details the farmer gave earlier. */
+  historyCut: boolean
 }
 
-function schemeInfo() {
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+export function parseRequest(body: unknown): ParsedChat {
+  const req = body as Partial<ChatRequest>
+  if (!req || !Array.isArray(req.messages) || !req.messages.length || !isLang(req.lang)) throw new BadRequest('invalid chat request')
+  // Gemini needs alternating turns; a question re-sent after an error would otherwise give two user turns.
+  const merged: ChatMessage[] = []
+  for (const m of req.messages) {
+    if (!m || typeof m.text !== 'string' || !m.text.trim()) continue
+    const role = m.role === 'model' ? 'model' : 'user'
+    const text = m.text.slice(0, MAX_MESSAGE_CHARS)
+    const last = merged.at(-1)
+    if (last?.role === role) last.text = `${last.text}\n\n${text}`.slice(-MAX_MESSAGE_CHARS)
+    else merged.push({ role, text })
+  }
+  let messages = merged.slice(-MAX_HISTORY)
+  while (messages[0]?.role === 'model') messages = messages.slice(1)
+  if (messages.at(-1)?.role !== 'user') throw new BadRequest('last message must be from the user')
+
+  const str = (v: unknown) => (typeof v === 'string' && v.length < 80 ? v : undefined)
+  const crops = Array.isArray(req.crops) ? req.crops.filter((c): c is string => typeof c === 'string' && c.length < 60).slice(0, 30) : []
+  // ~1 km is plenty for farm weather, and the farmer's exact position never needs to leave the phone.
+  const coords =
+    req.coords && inIndia(Number(req.coords.lat), Number(req.coords.lon)) ? { lat: round2(req.coords.lat), lon: round2(req.coords.lon) } : undefined
+  const intent: ChatIntent | undefined =
+    req.intent?.kind === 'price' && typeof req.intent.commodity === 'string' && req.intent.commodity.length < 60
+      ? { kind: 'price', commodity: req.intent.commodity }
+      : undefined
+  return {
+    messages,
+    lang: req.lang,
+    state: str(req.state),
+    district: str(req.district),
+    crops,
+    coords,
+    intent,
+    historyCut: merged.length > messages.length,
+  }
+}
+
+/** Scheme details in the farmer's language: the same wording the app's Schemes page shows. */
+function schemeInfo(lang: Lang, stateId: string | undefined) {
+  const state = stateId ? STATE_AGRI_INFO[stateId] : undefined
   return {
     lastChecked: SCHEMES_CHECKED,
-    schemes: SCHEMES.map((s) => ({ ...s.text.en, website: s.url, phones: s.phones })),
-    helplines: HELPLINES.map((h) => ({ phone: h.phone, for: h.label.en })),
+    schemes: SCHEMES.map((s) => ({ ...s.text[lang], ...(lang === 'en' ? {} : { name_en: s.text.en.name }), website: s.url, phones: s.phones })),
+    helplines: HELPLINES.map((h) => ({ phone: h.phone, for: h.label[lang] })),
+    stateSchemes: {
+      state: stateId ?? 'unknown',
+      names: state?.schemes ?? [],
+      whereToConfirm: state?.office ?? DEFAULT_AGRI_OFFICE,
+      note: 'Never quote state scheme amounts or dates; tell the farmer to confirm at this office.',
+    },
     note: 'Rules and amounts can change; tell the farmer to confirm at the agriculture office, bank or official website. Never pay agents.',
   }
 }
 
+const withTimeout = <T>(promise: Promise<T>, ms: number) =>
+  Promise.race([promise, new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ms))])
+
+/** Short, stable id for a question, so a farmer's bug report can be matched in the 3-day logs without storing their text. */
+function questionId(text: string) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193)
+  return (h >>> 0).toString(36)
+}
+
 export async function handleChat(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  if (!env.GEMINI_API_KEY) return apiError('not_configured', 503)
   const body = (await request.json().catch(() => null)) as (Partial<ChatRequest> & { model?: unknown }) | null
   const req = parseRequest(body)
+  // Price buttons can be answered without the AI; everything else needs it.
+  if (!env.GEMINI_API_KEY && !req.intent) return apiError('not_configured', 503)
   // Local testing only: compare models on the same question.
   const onlyModels = new URL(request.url).hostname === 'localhost' && typeof body?.model === 'string' ? [body.model] : undefined
   const state = findState(req.state)
+  const farmer = { state: state?.id, district: req.district, crops: req.crops }
+  const question = req.messages.at(-1)!.text
+  const qid = questionId(question)
 
-  let contents: GeminiContent[] = req.messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] }))
-  const systemInstruction = { parts: [{ text: chatSystemPrompt(req.lang, { state: state?.id, district: req.district, crops: req.crops }) }] }
-
-  const runTool = async (call: NonNullable<GeminiPart['functionCall']>): Promise<Record<string, unknown>> => {
+  const runTool = async (name: string, args: Record<string, unknown>): Promise<object> => {
     try {
-      switch (call.name) {
+      switch (name) {
         case 'get_mandi_prices':
-          return await mandiPricesTool(env, call.args ?? {}, req)
+          return await mandiPricesTool(env, args, farmer)
         case 'get_weather_forecast':
           return await weatherTool(env, { coords: req.coords, stateName: state?.id, stateCoords: state && { lat: state.lat, lon: state.lon } })
         case 'get_scheme_info':
-          return schemeInfo()
+          return schemeInfo(req.lang, state?.id)
         default:
-          return { error: `Unknown tool ${call.name}` }
+          return { error: `Unknown tool ${name}` }
       }
     } catch (err) {
-      console.error(`${call.name} failed`, err)
+      console.error(`${name} failed`, err)
       return { error: 'This information service is not responding right now. Tell the farmer and suggest another way to find out.' }
     }
   }
@@ -105,91 +160,159 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
   const writer = writable.getWriter()
   const encoder = new TextEncoder()
   const send = (event: ChatEvent) => writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+  const filter = createOutputFilter(req.lang, (text) => send({ type: 'text', text }))
 
   const run = async () => {
+    let calls = 0
     try {
+      // 1. Look up what the question obviously needs before the first AI call (saves a whole tool round).
+      const intents = detectIntents(question)
+      const priceCrop = req.intent?.kind === 'price' ? req.intent.commodity : intents.priceCrop?.id
+      if (priceCrop) await send({ type: 'tool', name: 'get_mandi_prices' })
+      if (intents.weather) await send({ type: 'tool', name: 'get_weather_forecast' })
+      const [prices, weather] = await Promise.all([
+        priceCrop ? runTool('get_mandi_prices', { commodity: priceCrop }) : undefined,
+        intents.weather ? withTimeout(runTool('get_weather_forecast', {}), PREFETCH_WEATHER_MS) : undefined,
+      ])
+
+      // 2. A price button answered straight from Agmarknet: no AI call, works even when the AI is resting.
+      if (req.intent?.kind === 'price' && prices && !('error' in prices)) {
+        const text = priceAnswer(prices as PriceResult, req.lang, {
+          today: indiaNow().toISOString().slice(0, 10),
+          requestedDistrict: req.district,
+        })
+        if (text) {
+          await send({ type: 'meta', model: 'template' })
+          await send({ type: 'text', text })
+          await send({ type: 'done' })
+          console.log(`chat ${qid} answered from template (${req.intent.commodity})`)
+          return
+        }
+      }
+      if (!env.GEMINI_API_KEY) {
+        await send({ type: 'error', code: 'not_configured' })
+        return
+      }
+
+      // 3. The AI answers, with the looked-up data attached to the question as tool results.
+      const lookedUp: GeminiPart[] = [
+        ...(prices ? [{ text: toolResultText('get_mandi_prices', prices) }] : []),
+        ...(weather ? [{ text: toolResultText('get_weather_forecast', weather) }] : []),
+      ]
+      let contents: GeminiContent[] = req.messages.map((m, i) => ({
+        role: m.role,
+        parts: [{ text: m.text }, ...(i === req.messages.length - 1 ? lookedUp : [])],
+      }))
+      const schemes = intents.schemes ? schemeInfo(req.lang, state?.id) : undefined
+      const systemInstruction = { parts: [{ text: chatSystemPrompt(req.lang, farmer, { historyCut: req.historyCut, schemes }) }] }
+      const generationConfig = { temperature: 0.5, maxOutputTokens: MAX_OUTPUT_TOKENS }
+
       let model: string | undefined
-      let answered = false
       let finishReason: string | undefined
-      const generationConfig = { temperature: 0.4, maxOutputTokens: MAX_OUTPUT_TOKENS }
+      let answered = false
+      let toolRounds = 0
       let forceAnswer = false
-      for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+      const quiet: string[] = []
+
+      while (true) {
+        if (request.signal.aborted) return
         // After the last tool round the model must answer with what it has. Gemini doesn't always honour
         // functionCallingConfig NONE, so send no tools at all, with earlier results as plain text.
-        const last = round === MAX_TOOL_ROUNDS || forceAnswer
-        let roundText = false
+        const last = toolRounds >= MAX_TOOL_ROUNDS || forceAnswer
+        calls++
         const call = await callGemini(
           env,
           'streamGenerateContent',
           last
             ? { contents: toolHistoryAsText(contents), systemInstruction, generationConfig }
             : { contents, systemInstruction, tools: TOOLS, generationConfig },
-          { preferModel: model, models: onlyModels, forOtherModel: (b) => ({ ...b, contents: toolHistoryAsText(b.contents) }) },
+          {
+            // A retry after a quiet round goes to a different model, plainly.
+            preferModel: forceAnswer ? undefined : model,
+            exclude: quiet,
+            models: onlyModels,
+            plain: forceAnswer,
+            signal: request.signal,
+            forOtherModel: (b) => ({ ...b, contents: toolHistoryAsText(b.contents) }),
+          },
         )
         if (model && call.model !== model) contents = toolHistoryAsText(contents)
         model = call.model
-        const res = call.res
+        await send({ type: 'meta', model })
 
+        let roundText = false
+        finishReason = undefined
         const modelParts: GeminiPart[] = []
-        const calls: NonNullable<GeminiPart['functionCall']>[] = []
-        for await (const chunk of readGeminiStream(res.body!)) {
-          if (chunk.promptFeedback?.blockReason) {
+        const toolCalls: NonNullable<GeminiPart['functionCall']>[] = []
+        for await (const chunk of readGeminiStream(call.res.body!)) {
+          const candidate = chunk.candidates?.[0]
+          if (chunk.promptFeedback?.blockReason || candidate?.finishReason === 'SAFETY' || candidate?.finishReason === 'PROHIBITED_CONTENT') {
+            await filter.flush()
             await send({ type: 'error', code: 'blocked' })
+            console.warn(`chat ${qid} blocked by ${model}: ${chunk.promptFeedback?.blockReason ?? candidate?.finishReason}`)
             return
           }
-          const candidate = chunk.candidates?.[0]
           if (candidate?.finishReason) finishReason = candidate.finishReason
           for (const part of candidate?.content?.parts ?? []) {
             // Keep parts verbatim (incl. thought signatures) — Gemini needs them back for tool calls.
             modelParts.push(part)
-            if (part.functionCall) calls.push(part.functionCall)
+            if (part.functionCall) toolCalls.push(part.functionCall)
             else if (part.text && !part.thought) {
-              answered = roundText = true
-              await send({ type: 'text', text: part.text })
+              roundText = true
+              await filter.push(part.text)
             }
           }
-          if (candidate?.finishReason === 'SAFETY' || candidate?.finishReason === 'PROHIBITED_CONTENT') {
-            await send({ type: 'error', code: 'blocked' })
-            return
-          }
-          if (candidate?.finishReason === 'MAX_TOKENS') {
-            console.warn('chat answer hit MAX_TOKENS')
-            await send({ type: 'text', text: '…' })
-          }
         }
-        if (last) break
-        if (!calls.length) {
-          // Some models go quiet after reading tool results; ask once more for a plain answer.
-          if (round > 0 && !roundText) {
-            console.warn(`${model} gave no text after tool results; asking again without tools`)
-            forceAnswer = true
-            continue
+        await filter.flush()
+
+        if (toolCalls.length && !last) {
+          // A preface like "Let me check prices…" is not the answer: the round after the tools must answer.
+          toolRounds++
+          contents.push({ role: 'model', parts: modelParts })
+          for (const name of new Set(toolCalls.map((c) => c.name))) await send({ type: 'tool', name })
+          const results = await Promise.all(toolCalls.map((c) => runTool(c.name, c.args ?? {})))
+          // Only the crop is logged from tool arguments, never anything the farmer typed.
+          toolCalls.forEach((c, i) =>
+            console.log(`chat ${qid} tool ${c.name}${c.args?.commodity ? ` ${String(c.args.commodity)}` : ''} -> ${'error' in results[i] ? 'error' : 'ok'}`),
+          )
+          contents.push({
+            role: 'user',
+            parts: toolCalls.map((c, i) => ({ functionResponse: { ...(c.id ? { id: c.id } : {}), name: c.name, response: results[i] } })),
+          })
+          continue
+        }
+        if (roundText) {
+          answered = true
+          if (finishReason === 'MAX_TOKENS') {
+            console.warn(`chat ${qid} answer hit MAX_TOKENS (${model})`)
+            await send({ type: 'cut' })
           }
           break
         }
-
-        contents.push({ role: 'model', parts: modelParts })
-        for (const name of new Set(calls.map((c) => c.name))) await send({ type: 'tool', name })
-        const results = await Promise.all(calls.map(runTool))
-        calls.forEach((c, i) => console.log(`tool ${c.name} ${JSON.stringify(c.args ?? {})} -> ${'error' in results[i] ? `error: ${results[i].error}` : 'ok'}`))
-        contents.push({
-          role: 'user',
-          parts: calls.map((call, i) => ({
-            functionResponse: { ...(call.id ? { id: call.id } : {}), name: call.name, response: results[i] },
-          })),
-        })
+        // No text: some models go quiet after tool results or after long thinking. Ask once more, plainly,
+        // on another model.
+        if (forceAnswer) break
+        console.warn(`chat ${qid}: ${model} gave no text (${finishReason}); asking another model`)
+        quiet.push(model)
+        forceAnswer = true
       }
-      console.log(`chat answered by ${model} (${finishReason})`)
+
+      console.log(`chat ${qid} answered by ${model} (${finishReason}); ${calls} AI call(s), ${toolRounds} tool round(s), prefetched ${lookedUp.length}`)
       if (!answered) {
-        console.warn(`chat produced no answer (model ${model})`)
         await send({ type: 'error', code: 'upstream' })
         return
       }
       await send({ type: 'done' })
     } catch (err) {
-      console.error('chat failed', err)
+      await filter.flush().catch(() => {})
+      if (request.signal.aborted) {
+        console.log(`chat ${qid}: farmer left after ${calls} AI call(s)`)
+        return
+      }
+      console.error(`chat ${qid} failed`, err)
       const busy = err instanceof UpstreamError && err.status === 429
-      await send({ type: 'error', code: busy ? 'busy' : 'upstream' }).catch(() => {})
+      const retryAt = busy && err.retryAt ? new Date(err.retryAt).toISOString() : undefined
+      await send({ type: 'error', code: busy ? 'busy' : 'upstream', ...(retryAt ? { retryAt } : {}) }).catch(() => {})
     } finally {
       await writer.close().catch(() => {})
     }
@@ -197,6 +320,6 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
   ctx.waitUntil(run())
 
   return new Response(readable, {
-    headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform' },
+    headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', 'x-content-type-options': 'nosniff' },
   })
 }

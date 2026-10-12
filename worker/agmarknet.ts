@@ -1,4 +1,4 @@
-import { commodityForRecord, findCommodity, normalizeName } from '../shared/commodities'
+import { commodityForRecord, normalizeName, type Commodity } from '../shared/commodities'
 import type { IndianState } from '../shared/states'
 import { UpstreamError, cached, indiaNow, upstreamFetch } from './util'
 
@@ -98,13 +98,15 @@ export async function agmarknetDistricts(env: Env, state: IndianState): Promise<
   return filters.districts.filter((d) => d.stateId === stateId).map((d) => d.name)
 }
 
-/** Agmarknet commodity ids for a crop named in any language ("Tomato", "టమాటా", "paddy"). */
-export async function agmarknetCommodities(env: Env, query: string): Promise<{ id: number; name: string }[]> {
+/**
+ * Agmarknet commodity ids for a crop we know (any of its forms), else for Agmarknet names starting with the
+ * Latin query ("apple" finds "Apple" but not "Pineapple").
+ */
+export async function agmarknetCommodities(env: Env, crop: Commodity | undefined, query: string): Promise<{ id: number; name: string }[]> {
   const { commodities } = await getFilters(env)
-  const crop = findCommodity(query)
   if (crop) return commodities.filter((c) => commodityForRecord(c.name)?.id === crop.id)
   const q = normalizeName(query)
-  return q ? commodities.filter((c) => normalizeName(c.name).includes(q)).slice(0, 10) : []
+  return q ? commodities.filter((c) => normalizeName(c.name).startsWith(q)).slice(0, 10) : []
 }
 
 const isoDaysAgo = (n: number) => new Date(indiaNow().getTime() - n * 86400_000).toISOString().slice(0, 10)
@@ -169,12 +171,11 @@ export async function agmarknetStateSummary(env: Env, state: IndianState, commod
   const stateId = stateIdFor(filters, state)
   if (!stateId || !commodityIds.length) return []
   return cached(`agm2:sum:${stateId}:${commodityIds.join(',')}`, 30 * 60, async () => {
-    const rows = await dashboard<SummaryRow>(env, {
-      dashboard: 'marketwise_price_arrival',
-      date: isoDaysAgo(0),
-      state: stateId,
-      commodity: commodityIds,
-    })
+    const summaryFor = (ago: number) =>
+      dashboard<SummaryRow>(env, { dashboard: 'marketwise_price_arrival', date: isoDaysAgo(ago), state: stateId, commodity: commodityIds })
+    // Early in the morning today's summary is still empty.
+    let rows = await summaryFor(0)
+    if (!rows.length) rows = await summaryFor(1)
     return rows.map((r) => ({
       commodity: r.cmdt_name,
       msp: Number(r.msp_price) > 0 ? Number(r.msp_price) : undefined,

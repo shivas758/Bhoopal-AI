@@ -82,14 +82,19 @@ function voicesReady(): Promise<SpeechSynthesisVoice[]> {
   })
 }
 
-/** Strips markdown and splits into sentence-sized chunks (Chrome cuts off long utterances). */
-function chunks(text: string): string[] {
+/**
+ * Strips markdown and emojis (phones read "🌱" aloud as "seedling") and splits into sentence-sized chunks
+ * (Chrome cuts off long utterances).
+ */
+export function chunks(text: string): string[] {
   const plain = text
     .replace(/[*_#`>|]/g, '')
+    .replace(/\p{Extended_Pictographic}️?/gu, '')
     .replace(/^\s*[-•]\s+/gm, '')
     .replace(/\s+/g, ' ')
     .trim()
-  const parts = plain.match(/[^.!?।\n]+[.!?।]*/g) ?? [plain]
+  // A sentence ends at . ! ? or । followed by a space or the end, so "2.5 ml" and "6.30" stay whole.
+  const parts = plain.match(/.+?(?:[.!?।](?=\s|$)|$)/g) ?? [plain]
   const out: string[] = []
   for (const p of parts) {
     const s = p.trim()

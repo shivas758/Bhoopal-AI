@@ -93,12 +93,17 @@ function summarize(series: MetEntry[]): Omit<WeatherResponse, 'updatedAt'> {
   return { hours, days: dayList }
 }
 
-const validCoords = (lat: number, lon: number) => Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180
+/** Inside India's bounding box (incl. Lakshadweep and the Andamans). Also rejects 0,0 from a missing parameter. */
+export const inIndia = (lat: number, lon: number) => Number.isFinite(lat) && Number.isFinite(lon) && lat >= 6 && lat <= 38 && lon >= 68 && lon <= 98
+
+// 0.05° (~5 km) is plenty for a farm forecast, lets a whole area share one MET request, and stops a scan of
+// every 0.01° cell from hammering MET Norway with our User-Agent.
+const GRID = 0.05
+const toGrid = (n: number) => (Math.round(n / GRID) * GRID).toFixed(2)
 
 export function getForecast(env: Env, lat: number, lon: number): Promise<WeatherResponse> {
-  // ~1 km precision is plenty for farm weather and lets neighbours share the cache.
-  const la = lat.toFixed(2)
-  const lo = lon.toFixed(2)
+  const la = toGrid(lat)
+  const lo = toGrid(lon)
   return cached(`wx:${la},${lo}`, 30 * 60, async (): Promise<WeatherResponse> => {
     const res = await upstreamFetch('MET Norway', `${MET}?lat=${la}&lon=${lo}`, {
       headers: { 'user-agent': String(env.USER_AGENT), accept: 'application/json' },
@@ -111,30 +116,33 @@ export function getForecast(env: Env, lat: number, lon: number): Promise<Weather
 }
 
 export async function handleWeather(url: URL, env: Env): Promise<Response> {
-  const lat = Number(url.searchParams.get('lat'))
-  const lon = Number(url.searchParams.get('lon'))
-  if (!validCoords(lat, lon)) throw new BadRequest('lat/lon required')
+  // parseFloat(null) is NaN, unlike Number(null) = 0, so a missing parameter is rejected.
+  const lat = parseFloat(url.searchParams.get('lat') ?? '')
+  const lon = parseFloat(url.searchParams.get('lon') ?? '')
+  if (!inIndia(lat, lon)) throw new BadRequest('lat/lon in India required')
   return json(await getForecast(env, lat, lon), 200, { 'cache-control': 'public, max-age=900' })
 }
 
-const hourIST = (iso: string) => new Date(Date.parse(iso) + IST_MS).toISOString().slice(11, 16)
+/** "2026-10-12 06:00" in IST: hours past midnight belong to the next day, so the model needs the date too. */
+const timeIST = (ms: number) => new Date(ms + IST_MS).toISOString().slice(0, 16).replace('T', ' ')
 
 /** The chat model's `get_weather_forecast` tool: a compact forecast for the farmer's location. */
 export async function weatherTool(
   env: Env,
   farmer: { coords?: { lat: number; lon: number }; stateName?: string; stateCoords?: { lat: number; lon: number } },
 ): Promise<Record<string, unknown>> {
-  const coords = farmer.coords && validCoords(farmer.coords.lat, farmer.coords.lon) ? farmer.coords : farmer.stateCoords
+  const coords = farmer.coords && inIndia(farmer.coords.lat, farmer.coords.lon) ? farmer.coords : farmer.stateCoords
   if (!coords) return { error: 'Location unknown. Ask which state/district the farmer is in, or to allow location in the Weather tab.' }
   const w = await getForecast(env, coords.lat, coords.lon)
-  const now = Date.now() - 3600_000
+  const from = Date.now() - 3600_000
   return {
     location: farmer.coords ? "farmer's GPS location" : `${farmer.stateName} state capital (approximate; for village-level weather the farmer can allow location in the Weather tab)`,
     timezone: 'IST',
+    now: timeIST(Date.now()),
     next24Hours: w.hours
-      .filter((h) => Date.parse(h.time) >= now)
+      .filter((h) => Date.parse(h.time) >= from)
       .slice(0, 24)
-      .map((h) => ({ time: hourIST(h.time), tempC: h.temp, rainMm: h.rainMm, windKmh: h.windKmh, humidity: h.humidity, sky: h.kind })),
+      .map((h) => ({ time: timeIST(Date.parse(h.time)), tempC: h.temp, rainMm: h.rainMm, windKmh: h.windKmh, humidity: h.humidity, sky: h.kind })),
     next7Days: w.days.map((d) => ({ date: d.date, minC: d.tMin, maxC: d.tMax, rainMm: d.rainMm, maxWindKmh: d.windMaxKmh, humidity: d.humidity, sky: d.kind })),
     source: 'MET Norway',
   }

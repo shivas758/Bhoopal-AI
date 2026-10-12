@@ -3,6 +3,8 @@
   "name": "bhoopal",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-10-01",
+  // request.signal fires when the farmer leaves, so an abandoned answer stops spending Gemini quota.
+  "compatibility_flags": ["enable_request_signal"],
   "observability": { "enabled": true },
   "assets": {
     // The React PWA is served as static assets; only /api/* runs the Worker.
@@ -11,19 +13,25 @@
   },
   "vars": {
     // Gemini models, best first. The free tier allows ~20 requests/day PER MODEL, so the Worker
-    // rotates through all of them; each farmer question uses 1-3 requests.
+    // rotates through all of them. Most questions use 1 request (the Worker looks prices, weather and
+    // schemes up first); a few need 2–3, and rare retries 4. Price buttons use none.
     // Order from testing on farmer questions (Oct 2026): 3.6 gave the most accurate, complete answers.
     // 3.8-flash is left out: it often stopped mid-answer after tool calls.
     "GEMINI_MODELS": "gemini-3.6-flash,gemini-3.7-flash,gemini-3.5-flash,gemini-2.5-flash,gemini-3.5-flash-lite",
-    // Lower thinking = faster replies. Set to "" to use the model default.
+    // Lower thinking = faster replies. Set to "" to use the model default. (Gemini 2.x gets a 512-token budget.)
     "GEMINI_THINKING_LEVEL": "low",
     // Sent to MET Norway and Agmarknet so they can identify us. MET Norway requires contact info (site URL or email).
     "USER_AGENT": "BhooPal/0.1 (+https://bhoopal.shivasahith.workers.dev)"
   },
-  // Per-IP limits on the AI endpoints so one user can't drain the free Gemini quota.
+  // Per-IP limits so one user can't drain the free quotas. Counted per Cloudflare location and only roughly,
+  // so they are a backstop, not exact accounting. A village behind one carrier IP shares them.
   "ratelimits": [
     { "name": "CHAT_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
-    { "name": "PHOTO_LIMITER", "namespace_id": "1002", "simple": { "limit": 5, "period": 60 } }
+    // Raised for group demos (a KVK meeting of 30 farmers behind one IP).
+    { "name": "PHOTO_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } },
+    { "name": "PRICES_LIMITER", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } },
+    // Weather and district lists: cheap for us, but MET Norway bans abusive User-Agents.
+    { "name": "DATA_LIMITER", "namespace_id": "1004", "simple": { "limit": 60, "period": 60 } }
   ]
   // Secrets (set with `npx wrangler secret put <NAME>`, or in .dev.vars for local dev):
   //   GEMINI_API_KEY     - free key from https://aistudio.google.com/apikey

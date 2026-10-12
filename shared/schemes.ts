@@ -65,7 +65,27 @@ export const HELPLINES: Helpline[] = [
       ml: 'ആംബുലൻസ് / അടിയന്തരം (കീടനാശിനി വിഷബാധയ്ക്കും)',
     },
   },
+  {
+    phone: '112',
+    label: {
+      en: 'All-India emergency number (police, fire, ambulance)',
+      hi: 'अखिल भारतीय आपातकालीन नंबर (पुलिस, आग, एम्बुलेंस)',
+      te: 'దేశవ్యాప్త అత్యవసర నంబర్ (పోలీసు, అగ్నిమాపక, అంబులెన్స్)',
+      ta: 'அகில இந்திய அவசர எண் (காவல், தீயணைப்பு, ஆம்புலன்ஸ்)',
+      kn: 'ಅಖಿಲ ಭಾರತ ತುರ್ತು ಸಂಖ್ಯೆ (ಪೊಲೀಸ್, ಅಗ್ನಿಶಾಮಕ, ಆಂಬ್ಯುಲೆನ್ಸ್)',
+      ml: 'അഖിലേന്ത്യ അടിയന്തര നമ്പർ (പോലീസ്, ഫയർ, ആംബുലൻസ്)',
+    },
+  },
 ]
+
+/** Kisan Call Centre: the one number every "ask an expert" message points to. */
+export const KCC_PHONE = HELPLINES[0].phone
+
+/** Free 24×7 Tele-MANAS mental-health helpline, for a farmer who sounds hopeless. */
+export const TELE_MANAS_PHONE = '14416'
+
+/** Numbers the AI may say besides HELPLINES and scheme phones (child helpline, cyber-fraud helpline, Tele-MANAS). */
+export const EXTRA_ALLOWED_PHONES = ['1098', '1930', TELE_MANAS_PHONE, '1-800-891-4416']
 
 export const SCHEMES: Scheme[] = [
   {
