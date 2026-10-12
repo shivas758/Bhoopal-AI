@@ -1,7 +1,8 @@
 import { Calculator, Camera, ChevronRight, Landmark, Settings as SettingsIcon } from 'lucide-react'
-import { ExperimentalBadge, PageHeader } from '../components/ui'
+import { ExperimentalBadge, PageHeader, ShareButton, secondaryButton } from '../components/ui'
 import type { MessageKey } from '../i18n'
 import { go, type Route } from '../lib/router'
+import { appUrl } from '../lib/share'
 import { useT } from '../settings'
 
 const ITEMS: { route: Route; label: MessageKey; Icon: typeof Camera; tint: string; experimental?: boolean }[] = [
@@ -33,6 +34,8 @@ export function More() {
             <ChevronRight className="size-5 text-stone-400" />
           </button>
         ))}
+        {/* Farmers hear about apps from other farmers: make passing it on one tap. */}
+        <ShareButton content={async () => ({ text: t('share.appText', { url: appUrl() }) })} label={t('share.app')} className={`${secondaryButton} mt-2`} />
       </main>
     </>
   )

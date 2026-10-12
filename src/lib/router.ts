@@ -24,6 +24,18 @@ export function go(route: Route, params?: Record<string, string>) {
   window.scrollTo(0, 0)
 }
 
+/**
+ * Switches bottom-nav tabs without adding history entries, so Android's back button leaves the app instead of
+ * replaying every tab tap. replaceState fires no hashchange, so one is dispatched for useRoute.
+ */
+export function goTab(route: Route) {
+  const hash = `#/${route === 'home' ? '' : route}`
+  if (window.location.hash === hash || (route === 'home' && !window.location.hash)) return
+  window.history.replaceState(null, '', hash)
+  window.dispatchEvent(new HashChangeEvent('hashchange'))
+  window.scrollTo(0, 0)
+}
+
 const ASK_KEY = 'bhoopal.ask'
 
 /**

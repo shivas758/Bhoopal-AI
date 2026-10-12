@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { LANG_INFO, LANGS } from '../../shared/types'
+import { districtLabel } from '../../shared/districts'
 import { STATES, findState } from '../../shared/states'
 import { CropPicker } from '../components/CropPicker'
 import { Card, PageHeader, inputClass } from '../components/ui'
@@ -75,13 +76,17 @@ export function Settings() {
             >
               <option value="">{t('common.allDistricts')}</option>
               {settings.district && !districts.data?.districts.some((d) => d.name === settings.district) && (
-                <option value={settings.district}>{settings.district}</option>
+                <option value={settings.district}>{districtLabel(settings.state, settings.district, lang)}</option>
               )}
-              {districts.data?.districts.map((d) => (
-                <option key={d.name} value={d.name}>
-                  {d.name}
-                </option>
-              ))}
+              {/* Shown in the farmer's script, sorted by it; Agmarknet's English name stays the stored value. */}
+              {districts.data?.districts
+                .map((d) => ({ name: d.name, label: districtLabel(settings.state, d.name, lang) }))
+                .sort((a, b) => a.label.localeCompare(b.label, bcp47))
+                .map((d) => (
+                  <option key={d.name} value={d.name}>
+                    {d.label === d.name ? d.name : `${d.label} (${d.name})`}
+                  </option>
+                ))}
             </select>
           </label>
         </Card>
@@ -102,7 +107,7 @@ export function Settings() {
           <h2 className="text-base font-bold">{t('settings.about')}</h2>
           <p>{t('settings.aboutBody')}</p>
           <p>{t('settings.privacy')}</p>
-          <p className="text-xs text-stone-600">
+          <p className="text-sm text-stone-600">
             BhooPal v{__APP_VERSION__} · {formatDateTime(Date.parse(__BUILD__), bcp47)}
           </p>
         </Card>

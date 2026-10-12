@@ -1,25 +1,21 @@
 import { Loader2, Mic, MicOff, Send, Square, Trash2, Volume2 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { COMMODITIES } from '../../shared/commodities'
-import { KCC_PHONE } from '../../shared/schemes'
+import { KCC_PHONE } from '../../shared/helplines'
 import { MAX_HISTORY, MAX_MESSAGE_CHARS, type ChatIntent, type ChatMessage, type Vote } from '../../shared/types'
-import { ErrorNotice, Feedback, Notice, PageHeader } from '../components/ui'
+import { useHeightVar } from '../components/BottomNav'
+import { CallKcc, ErrorNotice, Feedback, Notice, PageHeader, ShareButton, smallButton } from '../components/ui'
 import type { MessageKey } from '../i18n'
 import { ApiError, api, streamChat } from '../lib/api'
 import { answering, useOnline } from '../lib/hooks'
 import { Markdown } from '../lib/markdown'
-import { takeAsk, useRoute } from '../lib/router'
+import { go, takeAsk, useRoute, type Route } from '../lib/router'
+import { appUrl, forWhatsApp } from '../lib/share'
 import { answerLanguage, canListen, listen, speak, stopSpeaking, type ListenError } from '../lib/speech'
 import { readJson, writeJson } from '../lib/storage'
 import { useSettings, useT } from '../settings'
 
 const MAX_SAVED = 40
-const EXAMPLES: { key: MessageKey; intent?: ChatIntent }[] = [
-  { key: 'chat.example1', intent: { kind: 'price', commodity: 'Tomato' } },
-  { key: 'chat.example2' },
-  { key: 'chat.example3' },
-  { key: 'chat.example4' },
-]
 // What the farmer sees while the Worker looks something up.
 const TOOL_STATUS: Record<string, MessageKey> = {
   get_mandi_prices: 'chat.checkingPrices',
@@ -63,8 +59,86 @@ function savedDraft() {
   }
 }
 
-export function Chat() {
+interface BubbleProps {
+  m: ChatMessage
+  index: number
+  /** The answer being written right now. */
+  streaming: boolean
+  toolName: string | null
+  speaking: boolean
+  onRead: (index: number, text: string) => void
+  onVote: (index: number, vote: Vote) => void
+}
+
+/** One message. Memoized: while an answer streams in, only its own bubble re-renders and re-parses Markdown. */
+const Bubble = memo(function Bubble({ m, index, streaming, toolName, speaking, onRead, onVote }: BubbleProps) {
   const { t, bcp47 } = useT()
+  if (m.role === 'user') return <div className="ml-10 self-end rounded-2xl rounded-br-sm bg-brand-700 px-4 py-2.5 text-white">{m.text}</div>
+  return (
+    <div
+      lang={m.text ? answerLanguage(m.text, bcp47) : undefined}
+      className="mr-4 self-start rounded-2xl rounded-bl-sm border border-stone-200 bg-white px-4 py-3 shadow-sm"
+    >
+      {m.text ? (
+        <>
+          <Markdown text={m.text} />
+          {m.cut && <p className="mt-2 text-sm text-stone-700">{t('chat.cutShort')}</p>}
+          {streaming ? (
+            toolName && (
+              <span role="status" className="mt-2 inline-flex items-center gap-2 text-sm text-stone-700">
+                <Loader2 className="size-4 motion-safe:animate-spin" />
+                {t(TOOL_STATUS[toolName] ?? 'chat.thinking')}
+              </span>
+            )
+          ) : (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button onClick={() => onRead(index, m.text)} className={smallButton}>
+                {speaking ? <Square className="size-4" /> : <Volume2 className="size-4" />}
+                {speaking ? t('chat.stop') : t('chat.readAloud')}
+              </button>
+              <ShareButton content={async () => ({ text: `${forWhatsApp(m.text)}\n\n${t('share.fromApp', { url: appUrl() })}` })} />
+              <Feedback vote={m.vote} onVote={(vote) => onVote(index, vote)} />
+            </div>
+          )}
+        </>
+      ) : (
+        <span role="status" className="inline-flex items-center gap-2 text-stone-700">
+          <Loader2 className="size-4 motion-safe:animate-spin" />
+          {t((toolName && TOOL_STATUS[toolName]) || 'chat.thinking')}
+        </span>
+      )}
+    </div>
+  )
+})
+
+/** What still works without internet, and the free helpline: an offline chat must not be a dead end. */
+function OfflineCard() {
+  const { t } = useT()
+  const items: { key: MessageKey; route: Route }[] = [
+    { key: 'chat.offlineWeather', route: 'weather' },
+    { key: 'chat.offlinePrices', route: 'home' },
+    { key: 'chat.offlineSchemes', route: 'schemes' },
+    { key: 'chat.offlineTools', route: 'tools' },
+  ]
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+      <p className="font-semibold text-amber-950">{t('chat.offlineTitle')}</p>
+      <ul className="flex flex-col gap-1">
+        {items.map(({ key, route }) => (
+          <li key={key}>
+            <button onClick={() => go(route)} className="py-1 text-left font-medium text-brand-800 underline">
+              {t(key)}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <CallKcc />
+    </div>
+  )
+}
+
+export function Chat() {
+  const { t, lang, bcp47 } = useT()
   const { settings } = useSettings()
   const online = useOnline()
   const { params } = useRoute()
@@ -91,6 +165,8 @@ export function Chat() {
   const countdownRef = useRef<number | null>(null)
   const lastVoiceRef = useRef('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const shownCount = useRef(messages.length)
+  const composerRef = useHeightVar<HTMLDivElement>('--composer-h')
   const handledParams = useRef(false)
 
   // Save only finished exchanges: a half-written answer is saved by the unmount cleanup below instead.
@@ -105,8 +181,15 @@ export function Chat() {
     }
   }, [input])
   useEffect(() => {
+    // Follow the answer as it streams in, but don't yank a farmer who scrolled up to re-read something.
+    const el = document.scrollingElement ?? document.documentElement
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160
+    const newMessage = messages.length !== shownCount.current
+    shownCount.current = messages.length
+    if (!newMessage && !nearBottom) return
+    const smooth = newMessage && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
     // Block body on purpose: newer browsers return a Promise from smooth scrollIntoView.
-    void bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    void bottomRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' })
   }, [messages, status])
   useEffect(
     () => () => {
@@ -195,7 +278,8 @@ export function Chat() {
             state: settings.state,
             district: settings.district,
             crops: settings.crops,
-            coords: settings.coords,
+            // Rounded to ~1 km: also for fixes saved before rounding existed.
+            coords: settings.coords && { lat: Math.round(settings.coords.lat * 100) / 100, lon: Math.round(settings.coords.lon * 100) / 100 },
             ...(opts.intent ? { intent: opts.intent } : {}),
           },
           controller.signal,
@@ -325,12 +409,28 @@ export function Chat() {
     void send(input, { fromVoice: input.trim() !== '' && input.trim() === lastVoiceRef.current })
   }
 
-  const voteOn = (index: number, vote: Vote) => {
-    const m = messagesRef.current[index]
-    if (!m || m.vote) return
-    setMessages((prev) => prev.map((msg, j) => (j === index ? { ...msg, vote } : msg)))
-    void api.feedback({ kind: 'chat', vote, id: m.id, model: m.model, lang: settings.lang ?? 'en' })
-  }
+  const voteOn = useCallback(
+    (index: number, vote: Vote) => {
+      const m = messagesRef.current[index]
+      if (!m || m.vote) return
+      setMessages((prev) => prev.map((msg, j) => (j === index ? { ...msg, vote } : msg)))
+      void api.feedback({ kind: 'chat', vote, id: m.id, model: m.model, lang: settings.lang ?? 'en' })
+    },
+    [settings.lang],
+  )
+
+  // Example questions about the farmer's own crops (tomato and cotton until they've picked some).
+  const crop = (id: string | undefined, fallback: string) => (COMMODITIES.find((c) => c.id === id) ?? COMMODITIES.find((c) => c.id === fallback))!
+  const first = crop(settings.crops[0], 'Tomato')
+  const second = crop(settings.crops[1] ?? settings.crops[0], 'Cotton')
+  const examples: { text: string; intent?: ChatIntent }[] = [
+    { text: t('chat.example1', { crop: first.names[lang] }), intent: { kind: 'price', commodity: first.id } },
+    { text: t('chat.example2', { crop: second.names[lang] }) },
+    { text: t('chat.example3') },
+    { text: t('chat.example4') },
+  ]
+  // The helpline number inside the translated sentence becomes a tel: link.
+  const disclaimer = t('chat.disclaimer', { kcc: '\u0000' }).split('\u0000')
 
   const busy = status !== 'idle'
   const clear = () => {
@@ -367,66 +467,39 @@ export function Chat() {
         }
       />
 
-      <main className="flex flex-1 flex-col gap-3 px-3 pb-44 pt-3">
+      <main className="flex flex-1 flex-col gap-3 px-3 pt-3" style={{ paddingBottom: 'calc(var(--composer-h, 9rem) + 1rem)' }}>
         {messages.length === 0 && (
           <div className="flex flex-col gap-3 py-4">
             <p className="text-center text-stone-700">{t('chat.empty')}</p>
-            {EXAMPLES.map(({ key, intent }) => (
+            {examples.map(({ text, intent }) => (
               <button
-                key={key}
-                onClick={() => void send(t(key), intent ? { intent } : {})}
+                key={text}
+                onClick={() => void send(text, intent ? { intent } : {})}
                 className="rounded-2xl border border-brand-200 bg-white px-4 py-3 text-left text-brand-900 shadow-sm active:bg-brand-50"
               >
-                {t(key)}
+                {text}
               </button>
             ))}
+            {online && <CallKcc />}
           </div>
         )}
+        {!online && <OfflineCard />}
 
-        {messages.map((m, i) =>
-          m.role === 'user' ? (
-            <div key={i} className="ml-10 self-end rounded-2xl rounded-br-sm bg-brand-700 px-4 py-2.5 text-white">
-              {m.text}
-            </div>
-          ) : (
-            <div
+        {messages.map((m, i) => {
+          const streaming = busy && i === messages.length - 1
+          return (
+            <Bubble
               key={i}
-              lang={m.text ? answerLanguage(m.text, bcp47) : undefined}
-              className="mr-4 self-start rounded-2xl rounded-bl-sm border border-stone-200 bg-white px-4 py-3 shadow-sm"
-            >
-              {m.text ? (
-                <>
-                  <Markdown text={m.text} />
-                  {m.cut && <p className="mt-2 text-sm text-stone-600">{t('chat.cutShort')}</p>}
-                  {busy && i === messages.length - 1 ? (
-                    toolName && (
-                      <span className="mt-2 inline-flex items-center gap-2 text-sm text-stone-600">
-                        <Loader2 className="size-4 animate-spin" />
-                        {t(TOOL_STATUS[toolName] ?? 'chat.thinking')}
-                      </span>
-                    )
-                  ) : (
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => void readAloud(i, m.text)}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 text-sm font-medium text-stone-700"
-                      >
-                        {speakingIndex === i ? <Square className="size-4" /> : <Volume2 className="size-4" />}
-                        {speakingIndex === i ? t('chat.stop') : t('chat.readAloud')}
-                      </button>
-                      <Feedback vote={m.vote} onVote={(vote) => voteOn(i, vote)} />
-                    </div>
-                  )}
-                </>
-              ) : (
-                <span className="inline-flex items-center gap-2 text-stone-600">
-                  <Loader2 className="size-4 animate-spin" />
-                  {t((toolName && TOOL_STATUS[toolName]) || 'chat.thinking')}
-                </span>
-              )}
-            </div>
-          ),
-        )}
+              m={m}
+              index={i}
+              streaming={streaming}
+              toolName={streaming ? toolName : null}
+              speaking={speakingIndex === i}
+              onRead={readAloud}
+              onVote={voteOn}
+            />
+          )
+        })}
 
         {error ? <ErrorNotice error={error} /> : null}
         {notice && (
@@ -437,7 +510,7 @@ export function Chat() {
         <div ref={bottomRef} />
       </main>
 
-      <div className="pb-safe fixed inset-x-0 bottom-[60px] z-20 border-t border-stone-200 bg-soil-50 px-3 pt-2">
+      <div ref={composerRef} className="pb-safe fixed inset-x-0 z-20 border-t border-stone-200 bg-soil-50 px-3 pt-2" style={{ bottom: 'var(--nav-h, 60px)' }}>
         {countdown !== null ? (
           <button
             type="button"
@@ -447,7 +520,14 @@ export function Chat() {
             {t('chat.sendingIn', { n: countdown })}
           </button>
         ) : (
-          <p className="mx-auto mb-1.5 max-w-xl text-center text-xs leading-tight text-stone-600">{t('chat.disclaimer', { kcc: KCC_PHONE })}</p>
+          // Readable outdoors, and the helpline number is a tap away.
+          <p className="mx-auto mb-1.5 max-w-xl text-center text-sm leading-snug text-stone-700">
+            {disclaimer[0]}
+            <a href={`tel:${KCC_PHONE.replace(/-/g, '')}`} className="font-semibold text-brand-800 underline">
+              {KCC_PHONE}
+            </a>
+            {disclaimer[1]}
+          </p>
         )}
         <form onSubmit={submit} className="mx-auto flex max-w-xl items-end gap-2 pb-2">
           <button

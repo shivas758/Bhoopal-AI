@@ -63,7 +63,7 @@ export function InstallCard() {
           </button>
         )}
       </div>
-      <button onClick={dismiss} aria-label={t('common.close')} className="rounded-full p-1 text-brand-900/60">
+      <button onClick={dismiss} aria-label={t('common.close')} className="-m-1 rounded-full p-2.5 text-brand-900">
         <X className="size-5" />
       </button>
     </div>
@@ -79,8 +79,16 @@ export function UpdateToast() {
     updateServiceWorker,
   } = useRegisterSW({
     onRegisteredSW(_url, registration) {
-      // Farmers may keep the app open for days; check for updates hourly.
-      if (registration) setInterval(() => registration.update(), 60 * 60 * 1000)
+      if (!registration) return
+      // Farmers may keep the app open for days. Check for an update when they come back to it, at most every
+      // 6 hours, and never on Data Saver (an update downloads the whole new app).
+      let lastCheck = Date.now()
+      document.addEventListener('visibilitychange', () => {
+        const saveData = (navigator as { connection?: { saveData?: boolean } }).connection?.saveData
+        if (document.visibilityState !== 'visible' || saveData || Date.now() - lastCheck < 6 * 3600 * 1000) return
+        lastCheck = Date.now()
+        void registration.update()
+      })
     },
   })
 

@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { KCC_PHONE } from '../../shared/schemes'
+import { KCC_PHONE } from '../../shared/helplines'
 import { translate } from '../i18n'
 import { clearAll } from '../lib/storage'
 import { savedLang } from '../settings'

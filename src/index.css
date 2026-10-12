@@ -20,8 +20,17 @@
 }
 
 html {
-  /* Slightly larger base size: easier to read outdoors and for older farmers. */
-  font-size: 17px;
+  /* Slightly larger base size (17px by default), easier to read outdoors and for older farmers. A percentage,
+     not px, so a phone's own larger-text setting still scales it. */
+  font-size: 106.25%;
+}
+
+/* Telugu, Kannada, Malayalam and Tamil stack vowel signs above and below letters: give lines more room. */
+html:lang(te),
+html:lang(kn),
+html:lang(ml),
+html:lang(ta) {
+  line-height: 1.6;
 }
 
 body {
@@ -60,6 +69,8 @@ textarea {
     box-shadow: 0 0 0 14px rgb(220 38 38 / 0);
   }
 }
-.listening {
-  animation: pulse-ring 1.2s ease-out infinite;
+@media (prefers-reduced-motion: no-preference) {
+  .listening {
+    animation: pulse-ring 1.2s ease-out infinite;
+  }
 }

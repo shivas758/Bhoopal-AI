@@ -1,6 +1,7 @@
-import { Camera, ChevronDown, ImageUp, RotateCcw, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Camera, ChevronDown, ImageUp, RotateCcw, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { KCC_PHONE } from '../../shared/schemes'
+import { COMMODITIES } from '../../shared/commodities'
+import { KCC_PHONE } from '../../shared/helplines'
 import type { DiagnoseResult, Likelihood, Vote } from '../../shared/types'
 import {
   CallKcc,
@@ -10,6 +11,7 @@ import {
   Feedback,
   Notice,
   PageHeader,
+  ShareButton,
   Spinner,
   inputClass,
   primaryButton,
@@ -17,8 +19,11 @@ import {
 } from '../components/ui'
 import type { MessageKey } from '../i18n'
 import { api } from '../lib/api'
-import { compressPhoto } from '../lib/image'
+import { formatDate } from '../lib/format'
 import { useOnline } from '../lib/hooks'
+import { compressPhoto, shareablePhoto, thumbnail, type CompressedPhoto, type PhotoMime } from '../lib/image'
+import { appUrl } from '../lib/share'
+import { readJson, writeJson } from '../lib/storage'
 import { useSettings, useT } from '../settings'
 
 const LIKELIHOOD_STYLE: Record<Likelihood, string> = {
@@ -31,14 +36,12 @@ const LIKELIHOOD_STYLE: Record<Likelihood, string> = {
 // for this tab so the farmer doesn't have to start again.
 const SESSION_KEY = 'bhoopal.diagnose'
 
-interface Photo {
-  base64: string
-  mimeType: 'image/jpeg'
-  previewUrl: string
-}
+type Photo = CompressedPhoto
 
 interface Session {
-  photo: { base64: string; mimeType: 'image/jpeg' } | null
+  photo: { base64: string; mimeType: PhotoMime } | null
+  /** A crop tapped from the farmer's own crops (its English id), or null when typed in. */
+  cropId?: string | null
   crop: string
   note: string
   result: DiagnoseResult | null
@@ -63,6 +66,23 @@ function saveSession(session: Session) {
 
 const toPhoto = (p: Session['photo']): Photo | null => (p ? { ...p, previewUrl: `data:${p.mimeType};base64,${p.base64}` } : null)
 
+// The last few checks stay on the phone (with a small photo), to show the agriculture officer later.
+const HISTORY_KEY = 'diagnose.history'
+const MAX_HISTORY = 3
+
+interface SavedCheck {
+  at: number
+  thumb: string
+  result: DiagnoseResult
+}
+
+function loadHistory(): SavedCheck[] {
+  const saved = readJson<SavedCheck[]>(HISTORY_KEY, [])
+  return Array.isArray(saved)
+    ? saved.filter((c) => c && typeof c.at === 'number' && typeof c.thumb === 'string' && Array.isArray(c.result?.possible_problems))
+    : []
+}
+
 function WarningCard() {
   const { t } = useT()
   return (
@@ -78,6 +98,17 @@ function WarningCard() {
 function Result({ result, photo }: { result: DiagnoseResult; photo: string }) {
   const { t } = useT()
   const [openExpert, setOpenExpert] = useState<number | null>(null)
+
+  // Medicine names stay out of the shared text: a forwarded guess must not turn into a shopping list.
+  const shareContent = async () => {
+    const lines = [t('diagnose.shareWarn', { kcc: KCC_PHONE }), '']
+    if (result.crop) lines.push(`*${result.crop}*`)
+    if (result.summary) lines.push(result.summary)
+    for (const p of result.possible_problems) lines.push(`• ${p.name} – ${t(`diagnose.likelihood.${p.likelihood}` as MessageKey)}`)
+    lines.push('', t('share.fromApp', { url: appUrl() }))
+    const file = await shareablePhoto(photo).catch(() => undefined)
+    return { text: lines.join('\n'), file }
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -166,12 +197,13 @@ function Result({ result, photo }: { result: DiagnoseResult; photo: string }) {
 
       <Notice tone="warn">{t('diagnose.confirm')}</Notice>
       <CallKcc />
+      <ShareButton content={shareContent} label={t('diagnose.share')} className={secondaryButton} />
     </div>
   )
 }
 
 export function Diagnose() {
-  const { t, lang } = useT()
+  const { t, lang, bcp47 } = useT()
   const { settings, update } = useSettings()
   const online = useOnline()
   const cameraRef = useRef<HTMLInputElement>(null)
@@ -179,6 +211,7 @@ export function Diagnose() {
 
   const [session] = useState(loadSession)
   const [photo, setPhoto] = useState<Photo | null>(() => toPhoto(session?.photo ?? null))
+  const [cropId, setCropId] = useState<string | null>(session?.cropId ?? null)
   const [crop, setCrop] = useState(session?.crop ?? '')
   const [note, setNote] = useState(session?.note ?? '')
   const [loading, setLoading] = useState(false)
@@ -186,10 +219,13 @@ export function Diagnose() {
   const [badFormat, setBadFormat] = useState(false)
   const [result, setResult] = useState<DiagnoseResult | null>(session?.result ?? null)
   const [vote, setVote] = useState<Vote | null>(null)
+  const [history, setHistory] = useState(loadHistory)
+  const [viewing, setViewing] = useState<SavedCheck | null>(null)
+  const myCrops = settings.crops.map((id) => COMMODITIES.find((c) => c.id === id)).filter((c) => c !== undefined)
 
   useEffect(() => {
-    saveSession({ photo: photo && { base64: photo.base64, mimeType: photo.mimeType }, crop, note, result })
-  }, [photo, crop, note, result])
+    saveSession({ photo: photo && { base64: photo.base64, mimeType: photo.mimeType }, cropId, crop, note, result })
+  }, [photo, cropId, crop, note, result])
 
   const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -211,18 +247,27 @@ export function Diagnose() {
     setLoading(true)
     setError(null)
     try {
-      setResult(
-        await api.diagnose({
-          image: photo.base64,
-          mimeType: photo.mimeType,
-          lang,
-          crop: crop.trim() || undefined,
-          note: note.trim() || undefined,
-          state: settings.state,
-          district: settings.district,
-          crops: settings.crops,
-        }),
-      )
+      const answer = await api.diagnose({
+        image: photo.base64,
+        mimeType: photo.mimeType,
+        lang,
+        crop: cropId ?? (crop.trim() || undefined),
+        note: note.trim() || undefined,
+        state: settings.state,
+        district: settings.district,
+        crops: settings.crops,
+      })
+      setResult(answer)
+      if (answer.is_plant_image) {
+        // A small copy only: three full photos could fill the phone's storage for this app.
+        thumbnail(photo.previewUrl)
+          .then((thumb) => {
+            const next = [{ at: Date.now(), thumb, result: answer }, ...loadHistory()].slice(0, MAX_HISTORY)
+            writeJson(HISTORY_KEY, next)
+            setHistory(next)
+          })
+          .catch(() => {})
+      }
     } catch (err) {
       setError(err)
     } finally {
@@ -237,6 +282,7 @@ export function Diagnose() {
     setError(null)
     setBadFormat(false)
     setNote('')
+    setCropId(null)
     try {
       sessionStorage.removeItem(SESSION_KEY)
     } catch {
@@ -250,8 +296,17 @@ export function Diagnose() {
       <main className="flex flex-col gap-3 p-3 pb-24">
         <WarningCard />
 
-        {!settings.photoConsent ? (
+        {viewing ? (
           <>
+            <p className="text-sm text-stone-700">{t('diagnose.savedOn', { date: formatDate(viewing.at, bcp47) })}</p>
+            <Result result={viewing.result} photo={viewing.thumb} />
+            <button onClick={() => setViewing(null)} className={secondaryButton}>
+              <ArrowLeft className="size-5" /> {t('common.back')}
+            </button>
+          </>
+        ) : !settings.photoConsent ? (
+          <>
+            <p className="text-sm text-stone-700">{t('diagnose.privacy')}</p>
             <button onClick={() => update({ photoConsent: true })} className={`${primaryButton} w-full`}>
               {t('diagnose.agree')}
             </button>
@@ -300,11 +355,34 @@ export function Diagnose() {
 
             {photo && (
               <>
+                {myCrops.length > 0 && (
+                  <div role="group" aria-label={t('diagnose.whichCrop')}>
+                    <p className="mb-1 text-sm text-stone-700">{t('diagnose.whichCrop')}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {myCrops.map((c) => (
+                        <button
+                          key={c.id}
+                          aria-pressed={cropId === c.id}
+                          onClick={() => {
+                            setCropId(cropId === c.id ? null : c.id)
+                            setCrop('')
+                          }}
+                          className={`rounded-full border px-4 py-2 text-sm font-semibold ${cropId === c.id ? 'border-brand-700 bg-brand-700 text-white' : 'border-stone-300 bg-white text-stone-800'}`}
+                        >
+                          {c.names[lang]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <input
                   value={crop}
-                  onChange={(e) => setCrop(e.target.value)}
-                  placeholder={t('diagnose.crop')}
-                  aria-label={t('diagnose.crop')}
+                  onChange={(e) => {
+                    setCrop(e.target.value)
+                    setCropId(null)
+                  }}
+                  placeholder={myCrops.length > 0 ? t('diagnose.otherCrop') : t('diagnose.crop')}
+                  aria-label={myCrops.length > 0 ? t('diagnose.otherCrop') : t('diagnose.crop')}
                   className={inputClass}
                   maxLength={60}
                 />
@@ -324,6 +402,28 @@ export function Diagnose() {
             )}
             {loading && <Spinner label={t('diagnose.checking')} />}
             {error ? <ErrorNotice error={error} /> : null}
+            {!photo && history.length > 0 && (
+              <section className="mt-2 flex flex-col gap-2">
+                <h2 className="font-bold">{t('diagnose.earlier')}</h2>
+                {history.map((c) => (
+                  <button
+                    key={c.at}
+                    onClick={() => setViewing(c)}
+                    className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white p-2 text-left shadow-sm active:bg-stone-50"
+                  >
+                    <img src={c.thumb} alt="" className="size-16 shrink-0 rounded-xl object-cover" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm text-stone-600">{formatDate(c.at, bcp47)}</span>
+                      <span className="block truncate font-semibold">
+                        {[c.result.crop, c.result.possible_problems[0]?.name ?? (c.result.looks_healthy ? t('diagnose.healthy') : '')]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </section>
+            )}
           </>
         )}
       </main>

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { findState } from '../shared/states'
 import { LANG_INFO, LANGS, isLang, type Lang } from '../shared/types'
-import { translate, type MessageKey, type TranslateVars } from './i18n'
+import { dictLoaded, loadDict, translate, type MessageKey, type TranslateVars } from './i18n'
 import { readJson, writeJson } from './lib/storage'
 
 export interface Settings {
@@ -10,8 +10,8 @@ export interface Settings {
   onboarded: boolean
   state?: string
   district?: string
-  /** Last GPS fix, for weather. */
-  coords?: { lat: number; lon: number }
+  /** Last GPS fix (rounded to ~1 km) and when it was taken. */
+  coords?: { lat: number; lon: number; at?: number }
   /** Crops the farmer grows: commodity ids from shared/commodities (English names). */
   crops: string[]
   autoSpeak: boolean
@@ -28,7 +28,7 @@ export function load(): Settings {
   const saved = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
   const lang = isLang(saved.lang) ? saved.lang : null
   const state = typeof saved.state === 'string' && findState(saved.state) ? saved.state : undefined
-  const coords = saved.coords as { lat?: unknown; lon?: unknown } | undefined
+  const coords = saved.coords as { lat?: unknown; lon?: unknown; at?: unknown } | undefined
   return {
     lang,
     // Older versions had no onboarded flag.
@@ -37,7 +37,7 @@ export function load(): Settings {
     district: state && typeof saved.district === 'string' && saved.district.length < 80 ? saved.district : undefined,
     coords:
       coords && typeof coords.lat === 'number' && typeof coords.lon === 'number' && Number.isFinite(coords.lat) && Number.isFinite(coords.lon)
-        ? { lat: coords.lat, lon: coords.lon }
+        ? { lat: coords.lat, lon: coords.lon, ...(typeof coords.at === 'number' ? { at: coords.at } : {}) }
         : undefined,
     // Older versions had followed crops instead of grown crops.
     crops: strings(saved.crops) ?? strings(saved.favCrops) ?? DEFAULTS.crops,
@@ -64,12 +64,37 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  // The farmer's language loads before the screens render, so they never flash up in English first.
+  const lang = settings.lang ?? 'en'
+  const [readyLang, setReadyLang] = useState<Lang | null>(() => (dictLoaded(lang) ? lang : null))
   useEffect(() => {
-    document.documentElement.lang = LANG_INFO[settings.lang ?? 'en'].bcp47
-  }, [settings.lang])
+    let live = true
+    // If it can't load (offline before the app was saved), English is better than a blank screen.
+    const done = () => live && setReadyLang(lang)
+    loadDict(lang).then(done, done)
+    return () => {
+      live = false
+    }
+  }, [lang])
+
+  useEffect(() => {
+    document.documentElement.lang = LANG_INFO[lang].bcp47
+  }, [lang])
 
   const value = useMemo(() => ({ settings, update }), [settings, update])
+  if (readyLang !== lang) return <Splash />
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>
+}
+
+/** Same as the loading screen in index.html (its styles live there). */
+function Splash() {
+  return (
+    <div className="splash">
+      <img src="/logo.svg" alt="" />
+      <b>BhooPal</b>
+      <i />
+    </div>
+  )
 }
 
 export function useSettings() {

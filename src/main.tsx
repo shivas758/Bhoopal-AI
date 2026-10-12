@@ -8,12 +8,15 @@ import './index.css'
 
 dropOldOfflineCopies()
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <SettingsProvider>
-        <App />
-      </SettingsProvider>
-    </ErrorBoundary>
-  </StrictMode>,
-)
+// public/browser-check.js has already shown "please update Chrome" on browsers too old for the app.
+if (!(window as { __bhoopalOldBrowser?: boolean }).__bhoopalOldBrowser) {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <ErrorBoundary>
+        <SettingsProvider>
+          <App />
+        </SettingsProvider>
+      </ErrorBoundary>
+    </StrictMode>,
+  )
+}

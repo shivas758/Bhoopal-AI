@@ -1,6 +1,21 @@
-import { Calculator, Camera, ChevronRight, CloudSun, Landmark, Loader2, MessageCircle, Mic, Plus, Send, Settings as SettingsIcon, Sprout } from 'lucide-react'
+import {
+  Calculator,
+  Camera,
+  ChevronRight,
+  CloudSun,
+  Landmark,
+  Loader2,
+  LocateFixed,
+  MessageCircle,
+  Mic,
+  Plus,
+  Send,
+  Settings as SettingsIcon,
+  Sprout,
+} from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { COMMODITIES, type Commodity } from '../../shared/commodities'
+import { districtLabel } from '../../shared/districts'
 import { findState } from '../../shared/states'
 import { Card, ErrorNotice, ExperimentalBadge } from '../components/ui'
 import { InstallCard } from '../components/PwaPrompts'
@@ -8,7 +23,7 @@ import { WeatherIcon } from '../components/WeatherIcon'
 import type { MessageKey } from '../i18n'
 import { farmAdvice } from '../lib/advice'
 import { api } from '../lib/api'
-import { upcomingHours, useWeather } from '../lib/data'
+import { currentHour, headlineDay, useLocate, useWeather } from '../lib/data'
 import { formatDate, formatDateTime, formatNumber, formatRupees } from '../lib/format'
 import { useOfflineData } from '../lib/hooks'
 import { go, goAsk, type Route } from '../lib/router'
@@ -58,47 +73,62 @@ function AskCard() {
 
 function WeatherCard() {
   const { t, lang, bcp47 } = useT()
-  const { loc, data } = useWeather()
+  const { loc, data, savedAt, error } = useWeather()
+  const { locate, locating } = useLocate()
   if (!loc) {
     return (
-      <button onClick={() => go('settings')} className="w-full text-left">
-        <Card className="flex items-center gap-3">
-          <CloudSun className="size-8 text-amber-500" />
-          <span className="flex-1">{t('home.setState')}</span>
-          <ChevronRight className="size-5 text-stone-400" />
-        </Card>
+      <button onClick={() => go('settings')} className="flex w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm">
+        <CloudSun className="size-8 text-amber-500" />
+        <span className="flex-1">{t('home.setState')}</span>
+        <ChevronRight className="size-5 text-stone-500" />
       </button>
     )
   }
-  const now = data ? upcomingHours(data)[0] : undefined
-  const today = data?.days[0]
-  // Safety warnings (heat, thunder, heavy rain) come first, so they reach the Home screen.
+  // A forecast saved days ago must not be shown as "now".
+  const now = data ? currentHour(data) : undefined
+  const headline = data ? headlineDay(data) : undefined
+  // Safety warnings (heat, wind, thunder, heavy rain) come first, so they reach the Home screen.
   const advice = data ? farmAdvice(data, lang, bcp47, t)[0] : undefined
+  const stale = savedAt && (error || Date.now() - savedAt > 3 * 3600 * 1000)
   return (
-    <button onClick={() => go('weather')} className="w-full text-left">
-      <Card>
-        <div className="flex items-center gap-3">
-          {now ? <WeatherIcon kind={now.kind} className="size-10" /> : <CloudSun className="size-10 text-stone-300" />}
-          <div className="flex-1">
-            <p className="text-sm text-stone-600">{loc.label ?? t('weather.myLocation')}</p>
-            <p className="text-lg font-semibold">{now ? `${Math.round(now.temp)}°C · ${t(`weather.kind.${now.kind}` as MessageKey)}` : t('feature.weather')}</p>
-            {today && (
-              <p className="text-sm text-stone-600">
-                {today.tMin}° / {today.tMax}° · {t('weather.rain')} {today.rainMm} mm
-              </p>
-            )}
-          </div>
-          <ChevronRight className="size-5 text-stone-400" />
-        </div>
-        {advice && (
-          <p
-            className={`mt-3 rounded-lg px-3 py-2 text-sm ${advice.tone === 'warn' ? 'bg-amber-50 text-amber-950' : advice.tone === 'good' ? 'bg-brand-50 text-brand-900' : 'bg-stone-100'}`}
-          >
-            {t(advice.key, advice.vars)}
-          </p>
-        )}
-      </Card>
-    </button>
+    <Card>
+      <button onClick={() => go('weather')} className="flex w-full items-center gap-3 text-left">
+        {now ? <WeatherIcon kind={now.kind} className="size-10" /> : <CloudSun className="size-10 text-stone-400" />}
+        <span className="flex-1">
+          <span className="flex flex-wrap items-center gap-x-2 text-sm text-stone-600">
+            {loc.label ?? t('weather.myLocation')}
+            {loc.source !== 'gps' && <span className="rounded bg-amber-100 px-1.5 text-amber-950">{t('weather.approx')}</span>}
+          </span>
+          <span className="block text-lg font-semibold">
+            {now ? `${Math.round(now.temp)}°C · ${t(`weather.kind.${now.kind}` as MessageKey)}` : t('feature.weather')}
+          </span>
+          {headline && (
+            <span className="block text-sm text-stone-700">
+              {headline.tomorrow && `${t('weather.tomorrow')}: `}
+              {headline.day.tMin}° / {headline.day.tMax}° · {t('weather.rain')} {headline.day.rainMm} {t('weather.mm')}
+            </span>
+          )}
+          {stale && <span className="block text-sm text-stone-600">{t('common.updated', { time: formatDateTime(savedAt, bcp47) })}</span>}
+        </span>
+        <ChevronRight className="size-5 text-stone-500" />
+      </button>
+      {advice && (
+        <p
+          className={`mt-3 rounded-lg px-3 py-2 text-sm ${advice.tone === 'warn' ? 'bg-amber-50 text-amber-950' : advice.tone === 'good' ? 'bg-brand-50 text-brand-900' : 'bg-stone-100'}`}
+        >
+          {t(advice.key, advice.vars)}
+        </p>
+      )}
+      {loc.source !== 'gps' && (
+        <button
+          onClick={() => locate()}
+          disabled={locating}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 text-sm font-medium text-stone-800 active:bg-stone-200"
+        >
+          <LocateFixed className="size-4" /> {locating ? t('weather.locating') : t('weather.useGps')}
+        </button>
+      )}
+    </Card>
   )
 }
 
@@ -141,7 +171,7 @@ function PriceCard({ crop }: { crop: Commodity }) {
         <>
           <p className="text-sm text-brand-900">
             {data.scope === 'district' && data.district
-              ? t('price.inDistrict', { district: data.district })
+              ? t('price.inDistrict', { district: districtLabel(state.id, data.district, lang) })
               : t('price.acrossState', { state: state.names[lang] })}
           </p>
           {perQuintal && (
@@ -167,7 +197,7 @@ function PriceCard({ crop }: { crop: Commodity }) {
         </>
       )}
       {savedAt && (error || Date.now() - savedAt > 3 * 3600 * 1000) && (
-        <p className="mt-1 text-xs text-stone-600">{t('common.updated', { time: formatDateTime(savedAt, bcp47) })}</p>
+        <p className="mt-1 text-sm text-stone-600">{t('common.updated', { time: formatDateTime(savedAt, bcp47) })}</p>
       )}
       <button
         onClick={() => goAsk({ crop: crop.id })}
@@ -250,7 +280,9 @@ export function Home() {
         </button>
       </header>
       <main className="flex flex-col gap-4 p-4">
-        <h1 className="text-2xl font-bold">{t(greetingKey())}</h1>
+        <h1 tabIndex={-1} className="text-2xl font-bold outline-none">
+          {t(greetingKey())}
+        </h1>
         <AskCard />
         <InstallCard />
         <WeatherCard />

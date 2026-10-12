@@ -1,29 +1,33 @@
-import { AlertTriangle, ArrowLeft, Info, Loader2, Phone, ThumbsDown, ThumbsUp, WifiOff } from 'lucide-react'
-import type { ReactNode } from 'react'
-import { KCC_PHONE } from '../../shared/schemes'
+import { AlertTriangle, ArrowLeft, Check, Info, Loader2, Phone, Share2, ThumbsDown, ThumbsUp, WifiOff } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { KCC_PHONE } from '../../shared/helplines'
 import type { Vote } from '../../shared/types'
 import { errorMessageKey, errorMessageVars } from '../lib/api'
 import { useOnline } from '../lib/hooks'
 import { go, type Route } from '../lib/router'
+import { share } from '../lib/share'
 import { useT } from '../settings'
 
 export const inputClass =
-  'w-full rounded-xl border border-stone-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-200'
+  'w-full rounded-xl border border-stone-300 bg-white px-3 py-3 text-base outline-none placeholder:text-stone-500 focus:border-brand-600 focus:ring-2 focus:ring-brand-200'
 export const primaryButton =
   'inline-flex items-center justify-center gap-2 rounded-xl bg-brand-700 px-4 py-3 font-semibold text-white active:bg-brand-800 disabled:opacity-50'
 export const secondaryButton =
   'inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-3 font-medium text-stone-800 active:bg-stone-100 disabled:opacity-50'
+export const smallButton = 'inline-flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2.5 text-sm font-medium text-stone-700 active:bg-stone-200'
 
 export function PageHeader({ title, back = 'home', action }: { title: string; back?: Route | null; action?: ReactNode }) {
   const { t } = useT()
   return (
-    <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-stone-200 bg-white/95 px-3 py-2 backdrop-blur">
+    <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-stone-200 bg-white px-3 py-2">
       {back && (
-        <button onClick={() => go(back)} aria-label={t('common.back')} className="-ml-1 rounded-full p-2 active:bg-stone-100">
+        <button onClick={() => go(back)} aria-label={t('common.back')} className="-ml-1 rounded-full p-3 active:bg-stone-100">
           <ArrowLeft className="size-6" />
         </button>
       )}
-      <h1 className="flex-1 truncate text-lg font-bold">{title}</h1>
+      <h1 tabIndex={-1} className="flex-1 truncate text-lg font-bold outline-none">
+        {title}
+      </h1>
       {action}
     </header>
   )
@@ -105,16 +109,39 @@ export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () =
 export function Feedback({ vote, onVote }: { vote?: Vote; onVote: (vote: Vote) => void }) {
   const { t } = useT()
   if (vote) return <p className="text-sm text-stone-600">{t('feedback.thanks')}</p>
-  const button = 'inline-flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 text-sm font-medium text-stone-700 active:bg-stone-200'
   return (
     <span className="flex flex-wrap gap-2">
-      <button onClick={() => onVote('up')} className={button}>
+      <button onClick={() => onVote('up')} className={smallButton}>
         <ThumbsUp className="size-4" /> {t('feedback.helpful')}
       </button>
-      <button onClick={() => onVote('down')} className={button}>
+      <button onClick={() => onVote('down')} className={smallButton}>
         <ThumbsDown className="size-4" /> {t('feedback.wrong')}
       </button>
     </span>
+  )
+}
+
+/** Share to WhatsApp or any app. The content is built only when tapped, since preparing a photo takes a moment. */
+export function ShareButton({
+  content,
+  label,
+  className = smallButton,
+}: {
+  content: () => Promise<{ text: string; file?: File }>
+  label?: string
+  className?: string
+}) {
+  const { t } = useT()
+  const [copied, setCopied] = useState(false)
+  const onClick = async () => {
+    if ((await share(await content())) !== 'copied') return
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2500)
+  }
+  return (
+    <button onClick={() => void onClick()} className={className}>
+      {copied ? <Check className="size-4" /> : <Share2 className="size-4" />} {copied ? t('share.copied') : (label ?? t('share.share'))}
+    </button>
   )
 }
 
@@ -133,7 +160,7 @@ export function OfflineBanner() {
 export function ExperimentalBadge() {
   const { t } = useT()
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-sm font-semibold text-amber-950">
       <AlertTriangle className="size-3" />
       {t('common.experimental')}
     </span>
@@ -142,14 +169,13 @@ export function ExperimentalBadge() {
 
 export function Segmented<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
   return (
-    <div className="flex rounded-xl bg-stone-200 p-1" role="tablist">
+    <div className="flex rounded-xl bg-stone-200 p-1" role="group">
       {options.map((o) => (
         <button
           key={o.value}
-          role="tab"
-          aria-selected={value === o.value}
+          aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`flex-1 rounded-lg px-2 py-2 text-sm font-semibold ${value === o.value ? 'bg-white text-brand-800 shadow-sm' : 'text-stone-600'}`}
+          className={`flex-1 rounded-lg px-2 py-2.5 text-sm font-semibold ${value === o.value ? 'bg-white text-brand-800 shadow-sm' : 'text-stone-600'}`}
         >
           {o.label}
         </button>
