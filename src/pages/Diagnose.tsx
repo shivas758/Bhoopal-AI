@@ -1,14 +1,13 @@
-import { Camera, ChevronDown, ImageUp, Phone, RotateCcw, ShieldAlert, ShieldCheck } from 'lucide-react'
-import { useRef, useState, type ChangeEvent } from 'react'
+import { Camera, ChevronDown, ImageUp, RotateCcw, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { KCC_PHONE } from '../../shared/schemes'
 import type { DiagnoseResult, Likelihood } from '../../shared/types'
-import { Card, ErrorNotice, ExperimentalBadge, Notice, PageHeader, Spinner, inputClass, primaryButton, secondaryButton } from '../components/ui'
+import { CallKcc, Card, ErrorNotice, ExperimentalBadge, Notice, PageHeader, Spinner, inputClass, primaryButton, secondaryButton } from '../components/ui'
 import type { MessageKey } from '../i18n'
 import { api } from '../lib/api'
 import { compressPhoto } from '../lib/image'
 import { useOnline } from '../lib/hooks'
 import { useSettings, useT } from '../settings'
-
-const KCC = '1800-180-1551'
 
 const LIKELIHOOD_STYLE: Record<Likelihood, string> = {
   high: 'bg-red-100 text-red-800',
@@ -16,14 +15,41 @@ const LIKELIHOOD_STYLE: Record<Likelihood, string> = {
   low: 'bg-stone-200 text-stone-700',
 }
 
-function CallKcc() {
-  const { t } = useT()
-  return (
-    <a href={`tel:${KCC.replace(/-/g, '')}`} className={`${primaryButton} w-full`}>
-      <Phone className="size-5" /> {t('diagnose.callKcc')} · {KCC}
-    </a>
-  )
+// Android may discard a backgrounded page (e.g. while the camera app is open): keep the photo and result
+// for this tab so the farmer doesn't have to start again.
+const SESSION_KEY = 'bhoopal.diagnose'
+
+interface Photo {
+  base64: string
+  mimeType: 'image/jpeg'
+  previewUrl: string
 }
+
+interface Session {
+  photo: { base64: string; mimeType: 'image/jpeg' } | null
+  crop: string
+  note: string
+  result: DiagnoseResult | null
+}
+
+function loadSession(): Session | null {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null') as Session | null
+    return raw && typeof raw === 'object' ? raw : null
+  } catch {
+    return null
+  }
+}
+
+function saveSession(session: Session) {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
+  } catch {
+    // Storage full: the farmer just loses the photo if Android discards the page.
+  }
+}
+
+const toPhoto = (p: Session['photo']): Photo | null => (p ? { ...p, previewUrl: `data:${p.mimeType};base64,${p.base64}` } : null)
 
 function WarningCard() {
   const { t } = useT()
@@ -32,7 +58,7 @@ function WarningCard() {
       <p className="mb-1 flex items-center gap-2 text-lg font-bold">
         <ShieldAlert className="size-6 text-amber-600" /> {t('diagnose.warnTitle')}
       </p>
-      <p>{t('diagnose.warnBody')}</p>
+      <p>{t('diagnose.warnBody', { kcc: KCC_PHONE })}</p>
     </div>
   )
 }
@@ -52,6 +78,7 @@ function Result({ result, photo }: { result: DiagnoseResult; photo: string }) {
       </div>
 
       {!result.is_plant_image && <Notice tone="warn">{t('diagnose.notPlant')}</Notice>}
+      {result.crop_mismatch && <Notice tone="warn">{t('diagnose.cropMismatch', { crop: result.crop })}</Notice>}
       {result.image_quality === 'poor' && (
         <Notice tone="warn">
           <p className="font-semibold">{t('diagnose.poorPhoto')}</p>
@@ -68,16 +95,18 @@ function Result({ result, photo }: { result: DiagnoseResult; photo: string }) {
 
       {result.possible_problems.length > 0 && (
         <>
+          {/* Before the list too, not just at the end: the call matters more than any guess below. */}
+          <CallKcc />
           <h2 className="mt-1 text-lg font-bold">{t('diagnose.possible')}</h2>
           {result.possible_problems.map((p, i) => (
             <Card key={i} className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="flex-1 font-bold">{p.name}</h3>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${LIKELIHOOD_STYLE[p.likelihood]}`}>
+                <span className={`rounded-full px-2 py-0.5 text-sm font-semibold ${LIKELIHOOD_STYLE[p.likelihood]}`}>
                   {t(`diagnose.likelihood.${p.likelihood}` as MessageKey)}
                 </span>
               </div>
-              <p className="text-xs uppercase tracking-wide text-stone-500">{t(`diagnose.type.${p.type}` as MessageKey)}</p>
+              <p className="text-sm uppercase tracking-wide text-stone-600">{t(`diagnose.type.${p.type}` as MessageKey)}</p>
               {p.signs && (
                 <p className="text-sm">
                   <span className="font-semibold">{t('diagnose.signs')}: </span>
@@ -93,6 +122,11 @@ function Result({ result, photo }: { result: DiagnoseResult; photo: string }) {
                     ))}
                   </ul>
                 </div>
+              )}
+              {p.expert_options_redacted && (
+                <Notice tone="warn">
+                  <p className="font-semibold">{t('diagnose.expertRemoved')}</p>
+                </Notice>
               )}
               {p.expert_options && (
                 <div className="rounded-xl border border-amber-300">
@@ -131,12 +165,18 @@ export function Diagnose() {
   const cameraRef = useRef<HTMLInputElement>(null)
   const galleryRef = useRef<HTMLInputElement>(null)
 
-  const [photo, setPhoto] = useState<{ base64: string; mimeType: 'image/jpeg'; previewUrl: string } | null>(null)
-  const [crop, setCrop] = useState('')
-  const [note, setNote] = useState('')
+  const [session] = useState(loadSession)
+  const [photo, setPhoto] = useState<Photo | null>(() => toPhoto(session?.photo ?? null))
+  const [crop, setCrop] = useState(session?.crop ?? '')
+  const [note, setNote] = useState(session?.note ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<unknown>(null)
-  const [result, setResult] = useState<DiagnoseResult | null>(null)
+  const [badFormat, setBadFormat] = useState(false)
+  const [result, setResult] = useState<DiagnoseResult | null>(session?.result ?? null)
+
+  useEffect(() => {
+    saveSession({ photo: photo && { base64: photo.base64, mimeType: photo.mimeType }, crop, note, result })
+  }, [photo, crop, note, result])
 
   const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -144,10 +184,12 @@ export function Diagnose() {
     if (!file) return
     setResult(null)
     setError(null)
+    setBadFormat(false)
     try {
       setPhoto(await compressPhoto(file))
-    } catch (err) {
-      setError(err)
+    } catch {
+      // Usually an iPhone HEIC photo or another format the phone's browser can't open.
+      setBadFormat(true)
     }
   }
 
@@ -156,7 +198,18 @@ export function Diagnose() {
     setLoading(true)
     setError(null)
     try {
-      setResult(await api.diagnose({ image: photo.base64, mimeType: photo.mimeType, lang, crop: crop.trim() || undefined, note: note.trim() || undefined }))
+      setResult(
+        await api.diagnose({
+          image: photo.base64,
+          mimeType: photo.mimeType,
+          lang,
+          crop: crop.trim() || undefined,
+          note: note.trim() || undefined,
+          state: settings.state,
+          district: settings.district,
+          crops: settings.crops,
+        }),
+      )
     } catch (err) {
       setError(err)
     } finally {
@@ -168,7 +221,13 @@ export function Diagnose() {
     setPhoto(null)
     setResult(null)
     setError(null)
+    setBadFormat(false)
     setNote('')
+    try {
+      sessionStorage.removeItem(SESSION_KEY)
+    } catch {
+      /* ignore */
+    }
   }
 
   return (
@@ -195,7 +254,8 @@ export function Diagnose() {
           <>
             {!online && <Notice tone="warn">{t('diagnose.offline')}</Notice>}
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={onFile} hidden />
-            <input ref={galleryRef} type="file" accept="image/*" onChange={onFile} hidden />
+            {/* Only formats every phone browser can shrink; HEIC gets a clear message instead of an error. */}
+            <input ref={galleryRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={onFile} hidden />
 
             {photo ? (
               <img src={photo.previewUrl} alt="" className="max-h-80 w-full rounded-2xl bg-stone-200 object-contain" />
@@ -210,11 +270,16 @@ export function Diagnose() {
                 <ImageUp className="size-5" /> {t('diagnose.gallery')}
               </button>
             </div>
+            {badFormat && (
+              <Notice tone="warn" alert>
+                {t('diagnose.badFormat')}
+              </Notice>
+            )}
 
             {photo && (
               <>
-                <input value={crop} onChange={(e) => setCrop(e.target.value)} placeholder={t('diagnose.crop')} className={inputClass} maxLength={60} />
-                <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('diagnose.note')} className={inputClass} rows={2} maxLength={300} />
+                <input value={crop} onChange={(e) => setCrop(e.target.value)} placeholder={t('diagnose.crop')} aria-label={t('diagnose.crop')} className={inputClass} maxLength={60} />
+                <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('diagnose.note')} aria-label={t('diagnose.note')} className={inputClass} rows={2} maxLength={300} />
                 <button onClick={check} disabled={loading || !online} className={`${primaryButton} w-full`}>
                   {t('diagnose.check')}
                 </button>

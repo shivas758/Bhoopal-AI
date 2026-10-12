@@ -6,6 +6,8 @@ export interface Advice {
   tone: 'good' | 'warn' | 'info'
   key: MessageKey
   vars?: TranslateVars
+  /** About people's safety or a big weather event: shown first, and on the Home card instead of spray advice. */
+  urgent?: boolean
 }
 
 type T = (key: MessageKey, vars?: TranslateVars) => string
@@ -55,14 +57,16 @@ export function farmAdvice(w: WeatherResponse, lang: Lang, bcp47: string, t: T):
 
   const soon = w.days.slice(0, 4)
   const thunder = soon.find((d) => d.kind === 'thunder')
-  if (thunder) out.push({ tone: 'warn', key: 'advice.thunder', vars: { day: dayLabel(thunder.date, lang, bcp47, t) } })
+  if (thunder) out.push({ tone: 'warn', key: 'advice.thunder', vars: { day: dayLabel(thunder.date, lang, bcp47, t) }, urgent: true })
 
   const heavy = w.days.slice(0, 5).find((d) => d.rainMm >= 20)
   const rainy = soon.find((d) => d.rainMm >= 2)
-  if (heavy) out.push({ tone: 'warn', key: 'advice.heavyRain', vars: { day: dayLabel(heavy.date, lang, bcp47, t) } })
+  if (heavy) out.push({ tone: 'warn', key: 'advice.heavyRain', vars: { day: dayLabel(heavy.date, lang, bcp47, t) }, urgent: true })
   else if (rainy) out.push({ tone: 'info', key: 'advice.rainSoon', vars: { day: dayLabel(rainy.date, lang, bcp47, t) } })
 
   const hottest = Math.max(...w.days.slice(0, 5).map((d) => d.tMax))
+  // People first: heat stroke kills farm workers, so this comes before the advice for the crop.
+  if (hottest >= 40) out.push({ tone: 'warn', key: 'advice.heatSafety', urgent: true })
   if (hottest >= 38) out.push({ tone: 'warn', key: 'advice.heat', vars: { temp: hottest } })
 
   const weekRain = w.days.reduce((sum, d) => sum + d.rainMm, 0)
@@ -72,5 +76,6 @@ export function farmAdvice(w: WeatherResponse, lang: Lang, bcp47: string, t: T):
   if (humid.length && humid.reduce((s, d) => s + d.humidity, 0) / humid.length >= 85 && humid.some((d) => d.rainMm > 0)) {
     out.push({ tone: 'info', key: 'advice.humid' })
   }
-  return out
+  // Safety and big weather events first (stable order otherwise).
+  return [...out.filter((a) => a.urgent), ...out.filter((a) => !a.urgent)]
 }

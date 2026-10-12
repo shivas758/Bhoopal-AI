@@ -1,6 +1,7 @@
-import { AlertTriangle, ArrowLeft, Info, Loader2, WifiOff } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Info, Loader2, Phone, WifiOff } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { errorMessageKey } from '../lib/api'
+import { KCC_PHONE } from '../../shared/schemes'
+import { errorMessageKey, errorMessageVars } from '../lib/api'
 import { useOnline } from '../lib/hooks'
 import { go, type Route } from '../lib/router'
 import { useT } from '../settings'
@@ -31,7 +32,8 @@ export function Card({ children, className = '' }: { children: ReactNode; classN
   return <section className={`rounded-2xl border border-stone-200 bg-white p-4 shadow-sm ${className}`}>{children}</section>
 }
 
-export function Notice({ tone = 'info', children }: { tone?: 'info' | 'warn' | 'danger'; children: ReactNode }) {
+/** A boxed message. Screen readers announce it only when `alert` is set (errors), not for every hint. */
+export function Notice({ tone = 'info', alert = false, children }: { tone?: 'info' | 'warn' | 'danger'; alert?: boolean; children: ReactNode }) {
   const styles = {
     info: 'border-sky-200 bg-sky-50 text-sky-900',
     warn: 'border-amber-300 bg-amber-50 text-amber-950',
@@ -39,7 +41,7 @@ export function Notice({ tone = 'info', children }: { tone?: 'info' | 'warn' | '
   }[tone]
   const Icon = tone === 'info' ? Info : AlertTriangle
   return (
-    <div role={tone === 'info' ? 'note' : 'alert'} className={`flex gap-2 rounded-xl border p-3 text-sm ${styles}`}>
+    <div role={alert ? 'alert' : 'note'} className={`flex gap-2 rounded-xl border p-3 text-sm ${styles}`}>
       <Icon className="mt-0.5 size-5 shrink-0" />
       <div className="min-w-0 flex-1">{children}</div>
     </div>
@@ -55,11 +57,39 @@ export function Spinner({ label }: { label?: string }) {
   )
 }
 
-export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+const tel = (phone: string) => `tel:${phone.replace(/-/g, '')}`
+
+/** One-tap call to the free Kisan Call Centre. */
+export function CallKcc({ className = '' }: { className?: string }) {
   const { t } = useT()
   return (
-    <Notice tone="danger">
-      <p>{t(errorMessageKey(error))}</p>
+    <a href={tel(KCC_PHONE)} className={`${primaryButton} w-full ${className}`}>
+      <Phone className="size-5" /> {t('diagnose.callKcc')} · {KCC_PHONE}
+    </a>
+  )
+}
+
+/** Small tappable phone numbers, for messages that point to a helpline. */
+export function CallLinks({ phones }: { phones: string[] }) {
+  return (
+    <span className="mt-2 flex flex-wrap gap-2">
+      {phones.map((p) => (
+        <a key={p} href={tel(p)} className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-2 font-bold text-stone-900 ring-1 ring-black/10">
+          <Phone className="size-4" /> {p}
+        </a>
+      ))}
+    </span>
+  )
+}
+
+export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+  const { t, bcp47 } = useT()
+  const key = errorMessageKey(error)
+  return (
+    <Notice tone={key === 'error.resting' ? 'warn' : 'danger'} alert>
+      <p>{t(key, { kcc: KCC_PHONE, ...errorMessageVars(error, bcp47) })}</p>
+      {key === 'error.blocked' && <CallLinks phones={['108', '112', KCC_PHONE]} />}
+      {key === 'error.resting' && <CallLinks phones={[KCC_PHONE]} />}
       {onRetry && (
         <button onClick={onRetry} className="mt-2 font-semibold underline">
           {t('common.retry')}

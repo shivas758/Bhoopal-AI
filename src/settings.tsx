@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { LANG_INFO, LANGS, type Lang } from '../shared/types'
+import { findState } from '../shared/states'
+import { LANG_INFO, LANGS, isLang, type Lang } from '../shared/types'
 import { translate, type MessageKey, type TranslateVars } from './i18n'
 import { readJson, writeJson } from './lib/storage'
 
@@ -19,14 +20,29 @@ export interface Settings {
 
 const DEFAULTS: Settings = { lang: null, onboarded: false, crops: [], autoSpeak: false, photoConsent: false }
 
-function load(): Settings {
-  const saved = readJson<Partial<Settings> & { favCrops?: string[] }>('settings', {})
+const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.length < 60).slice(0, 30) : undefined)
+
+/** Saved settings, checked field by field: a corrupt or hand-edited value must never blank the app. */
+export function load(): Settings {
+  const raw = readJson<unknown>('settings', {})
+  const saved = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const lang = isLang(saved.lang) ? saved.lang : null
+  const state = typeof saved.state === 'string' && findState(saved.state) ? saved.state : undefined
+  const coords = saved.coords as { lat?: unknown; lon?: unknown } | undefined
   return {
-    ...DEFAULTS,
-    ...saved,
-    // Older versions had followed crops instead of grown crops, and no onboarded flag.
-    crops: saved.crops ?? saved.favCrops ?? [],
-    onboarded: saved.onboarded ?? Boolean(saved.lang),
+    lang,
+    // Older versions had no onboarded flag.
+    onboarded: typeof saved.onboarded === 'boolean' ? saved.onboarded && Boolean(lang) : Boolean(lang),
+    state,
+    district: state && typeof saved.district === 'string' && saved.district.length < 80 ? saved.district : undefined,
+    coords:
+      coords && typeof coords.lat === 'number' && typeof coords.lon === 'number' && Number.isFinite(coords.lat) && Number.isFinite(coords.lon)
+        ? { lat: coords.lat, lon: coords.lon }
+        : undefined,
+    // Older versions had followed crops instead of grown crops.
+    crops: strings(saved.crops) ?? strings(saved.favCrops) ?? DEFAULTS.crops,
+    autoSpeak: saved.autoSpeak === true,
+    photoConsent: saved.photoConsent === true,
   }
 }
 
@@ -81,4 +97,13 @@ export function guessLang(): Lang {
     if ((LANGS as readonly string[]).includes(code)) return code as Lang
   }
   return 'en'
+}
+
+/** The saved language read straight from storage, for screens shown when the app itself has failed. */
+export function savedLang(): Lang {
+  try {
+    return load().lang ?? guessLang()
+  } catch {
+    return 'en'
+  }
 }

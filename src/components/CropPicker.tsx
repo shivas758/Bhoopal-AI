@@ -1,6 +1,7 @@
 import { Check, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { COMMODITIES } from '../../shared/commodities'
+import { fold } from '../../shared/text'
 import { useT } from '../settings'
 import { inputClass } from './ui'
 
@@ -16,8 +17,8 @@ export function CropPicker({ selected, onChange }: { selected: string[]; onChang
 
   const crops = useMemo(() => {
     const rank = (id: string) => (POPULAR.includes(id) ? POPULAR.indexOf(id) : POPULAR.length)
-    const q = query.trim().toLowerCase()
-    return COMMODITIES.filter((c) => !q || c.names[lang].toLowerCase().includes(q) || c.names.en.toLowerCase().includes(q)).sort(
+    const q = fold(query)
+    return COMMODITIES.filter((c) => !q || fold(c.names[lang]).includes(q) || fold(c.names.en).includes(q)).sort(
       (a, b) => rank(a.id) - rank(b.id) || a.names[lang].localeCompare(b.names[lang], bcp47),
     )
   }, [query, lang, bcp47])

@@ -23,3 +23,30 @@ export function go(route: Route, params?: Record<string, string>) {
   window.location.hash = `#/${route === 'home' ? '' : route}${query}`
   window.scrollTo(0, 0)
 }
+
+const ASK_KEY = 'bhoopal.ask'
+
+/**
+ * Opens the chat with a question to send right away. Only questions asked inside the app are auto-sent: a
+ * forwarded "#/chat?q=…" link just fills the box, so nobody can spend a farmer's quota or plant a question.
+ */
+export function goAsk(params: { q?: string; crop?: string; voice?: '1' }) {
+  const query = new URLSearchParams(params as Record<string, string>).toString()
+  try {
+    sessionStorage.setItem(ASK_KEY, query)
+  } catch {
+    /* private mode: the question will just fill the box */
+  }
+  go('chat', params as Record<string, string>)
+}
+
+/** True (once) when these chat params came from goAsk() in this tab. */
+export function takeAsk(params: URLSearchParams): boolean {
+  try {
+    const ok = sessionStorage.getItem(ASK_KEY) === params.toString()
+    sessionStorage.removeItem(ASK_KEY)
+    return ok
+  } catch {
+    return false
+  }
+}

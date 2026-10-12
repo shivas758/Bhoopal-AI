@@ -1,11 +1,13 @@
 import { Search } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { STATES } from '../../shared/states'
+import { fold } from '../../shared/text'
 import { LANG_INFO, LANGS } from '../../shared/types'
 import { CropPicker } from '../components/CropPicker'
-import { inputClass, primaryButton } from '../components/ui'
+import { Notice, inputClass, primaryButton, secondaryButton } from '../components/ui'
 import { translate } from '../i18n'
 import { api } from '../lib/api'
+import { useOfflineData } from '../lib/hooks'
 import { guessLang, useSettings, useT } from '../settings'
 
 type Step = 'lang' | 'state' | 'district' | 'crops'
@@ -50,17 +52,11 @@ export function Onboarding() {
   const { settings, update } = useSettings()
   const [step, setStep] = useState<Step>('lang')
   const [stateQuery, setStateQuery] = useState('')
-  const [districts, setDistricts] = useState<string[] | null>(null)
+  const [districtQuery, setDistrictQuery] = useState('')
   const [crops, setCrops] = useState<string[]>(settings.crops)
-
-  useEffect(() => {
-    if (!settings.state) return
-    setDistricts(null)
-    api
-      .districts(settings.state)
-      .then((r) => setDistricts(r.districts.map((d) => d.name)))
-      .catch(() => setDistricts([]))
-  }, [settings.state])
+  // Same key as Settings, so the list is fetched once and still there offline.
+  const districtList = useOfflineData(settings.state ? `districts:${settings.state}` : null, () => api.districts(settings.state!))
+  const districts = districtList.data?.districts.map((d) => d.name) ?? null
 
   if (step === 'lang') return <LanguageStep onPick={() => setStep('state')} />
 
@@ -69,8 +65,8 @@ export function Onboarding() {
 
   let body
   if (step === 'state') {
-    const q = stateQuery.trim().toLowerCase()
-    const matches = STATES.filter((s) => !q || s.names[lang].toLowerCase().includes(q) || s.id.toLowerCase().includes(q))
+    const q = fold(stateQuery)
+    const matches = STATES.filter((s) => !q || fold(s.names[lang]).includes(q) || fold(s.id).includes(q))
     body = (
       <>
         <h1 className="text-2xl font-bold">{t('onboard.state')}</h1>
@@ -98,15 +94,43 @@ export function Onboarding() {
       </>
     )
   } else if (step === 'district') {
+    const q = fold(districtQuery)
+    const shown = districts?.filter((d) => !q || fold(d).includes(q)) ?? []
     body = (
       <>
         <h1 className="text-2xl font-bold">{t('onboard.district')}</h1>
         <p className="text-stone-600">{t('onboard.districtHint')}</p>
-        {districts === null ? (
-          <p className="text-stone-500">{t('common.loading')}</p>
+        {districts === null && districtList.loading ? (
+          <p className="text-stone-600">{t('common.loading')}</p>
+        ) : !districts?.length ? (
+          // Agmarknet down or the phone offline: say so, instead of an empty screen.
+          <Notice tone="warn" alert>
+            <p>{t('onboard.districtError')}</p>
+            <span className="mt-2 flex gap-2">
+              <button onClick={districtList.reload} className={secondaryButton}>
+                {t('common.retry')}
+              </button>
+              <button onClick={() => setStep('crops')} className={secondaryButton}>
+                {t('common.skip')}
+              </button>
+            </span>
+          </Notice>
         ) : (
+          <>
+          {districts.length > 8 && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 size-5 -translate-y-1/2 text-stone-500" />
+              <input
+                value={districtQuery}
+                onChange={(e) => setDistrictQuery(e.target.value)}
+                placeholder={t('onboard.searchDistrict')}
+                aria-label={t('onboard.searchDistrict')}
+                className={`${inputClass} pl-10`}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
-            {districts.map((d) => (
+            {shown.map((d) => (
               <button
                 key={d}
                 onClick={() => {
@@ -121,6 +145,7 @@ export function Onboarding() {
               </button>
             ))}
           </div>
+          </>
         )}
       </>
     )

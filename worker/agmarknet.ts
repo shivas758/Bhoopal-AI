@@ -95,6 +95,7 @@ const stateIdFor = (filters: Filters, state: IndianState) => filters.states.find
 export async function agmarknetDistricts(env: Env, state: IndianState): Promise<string[]> {
   const filters = await getFilters(env)
   const stateId = stateIdFor(filters, state)
+  if (!stateId) console.warn(`Agmarknet has no state matching ${state.api.join(' / ')}`)
   return filters.districts.filter((d) => d.stateId === stateId).map((d) => d.name)
 }
 

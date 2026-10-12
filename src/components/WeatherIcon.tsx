@@ -14,6 +14,7 @@ const ICONS: Record<WeatherKind, { Icon: typeof Sun; color: string }> = {
 }
 
 export function WeatherIcon({ kind, className = 'size-8' }: { kind: WeatherKind; className?: string }) {
-  const { Icon, color } = ICONS[kind]
+  // A kind added by a newer Worker shows as a plain cloud instead of crashing an older app.
+  const { Icon, color } = ICONS[kind] ?? ICONS.cloudy
   return <Icon className={`${className} ${color}`} aria-hidden />
 }

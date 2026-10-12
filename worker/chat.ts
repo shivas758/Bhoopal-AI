@@ -283,8 +283,9 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
         }
         if (roundText) {
           answered = true
-          if (finishReason === 'MAX_TOKENS') {
-            console.warn(`chat ${qid} answer hit MAX_TOKENS (${model})`)
+          // MAX_TOKENS, or a stream that ended without saying why: the farmer sees "answer cut short".
+          if (finishReason === 'MAX_TOKENS' || !finishReason) {
+            console.warn(`chat ${qid} answer cut short by ${model} (${finishReason ?? 'stream ended early'}; aborted=${request.signal.aborted})`)
             await send({ type: 'cut' })
           }
           break

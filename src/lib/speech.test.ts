@@ -1,5 +1,12 @@
 import { expect, test } from 'vitest'
-import { chunks } from './speech'
+import { answerLanguage, chunks } from './speech'
+
+test('the voice follows the script the answer is written in', () => {
+  expect(answerLanguage('టమాటా ధర **₹2,200**/క్వింటాల్ (MSP, eNAM)', 'en-IN')).toBe('te-IN')
+  expect(answerLanguage('Tomato price is ₹22 per kg', 'te-IN')).toBe('en-IN')
+  expect(answerLanguage('टमाटर का भाव', 'ta-IN')).toBe('hi-IN')
+  expect(answerLanguage('12345 ₹', 'kn-IN')).toBe('kn-IN')
+})
 
 test('decimals and times are never split', () => {
   expect(chunks('Mix 2.5 ml per litre.')).toEqual(['Mix 2.5 ml per litre.'])

@@ -1,6 +1,7 @@
 import { Download, RefreshCw, X } from 'lucide-react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
+import { answering } from '../lib/hooks'
 import { useT } from '../settings'
 
 interface InstallPromptEvent extends Event {
@@ -90,16 +91,19 @@ export function UpdateToast() {
     return () => clearTimeout(timer)
   }, [offlineReady, setOfflineReady])
 
-  if (!needRefresh && !offlineReady) return null
+  // Updating reloads the page, which would cut off an answer being written; wait until it's done.
+  const busy = answering.use()
+  if ((!needRefresh && !offlineReady) || busy) return null
   return (
-    <div className="fixed inset-x-3 bottom-20 z-40 mx-auto flex max-w-md items-center gap-3 rounded-xl bg-stone-900 p-3 text-sm text-white shadow-lg">
+    // At the top: at the bottom it covered the chat box.
+    <div className="fixed inset-x-3 top-3 z-40 mx-auto flex max-w-md items-center gap-3 rounded-xl bg-stone-900 p-3 text-sm text-white shadow-lg">
       <span className="flex-1">{needRefresh ? t('pwa.updateAvailable') : t('pwa.offlineReady')}</span>
       {needRefresh && (
         <button onClick={() => updateServiceWorker(true)} className="inline-flex items-center gap-1 rounded-lg bg-brand-600 px-3 py-1.5 font-semibold">
           <RefreshCw className="size-4" /> {t('pwa.update')}
         </button>
       )}
-      <button onClick={() => (setNeedRefresh(false), setOfflineReady(false))} aria-label={t('common.close')}>
+      <button onClick={() => (setNeedRefresh(false), setOfflineReady(false))} aria-label={t('common.close')} className="-m-1 rounded-full p-2">
         <X className="size-5" />
       </button>
     </div>

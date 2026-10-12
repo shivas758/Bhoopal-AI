@@ -30,7 +30,8 @@ function recognitionCtor(): RecognitionCtor | undefined {
 export const canListen = () => Boolean(recognitionCtor())
 export const canSpeak = () => 'speechSynthesis' in window
 
-export type ListenError = 'unsupported' | 'denied' | 'failed'
+/** 'network': Chrome's recogniser runs on Google's servers, so a weak 2G signal fails it. 'nomic': no microphone. */
+export type ListenError = 'unsupported' | 'denied' | 'network' | 'nomic' | 'failed'
 
 /** Starts speech-to-text. Returns a function that stops listening. */
 export function listen(
@@ -59,7 +60,15 @@ export function listen(
   }
   rec.onerror = (e) => {
     if (e.error === 'no-speech' || e.error === 'aborted') return
-    handlers.onError(e.error === 'not-allowed' || e.error === 'service-not-allowed' ? 'denied' : 'failed')
+    handlers.onError(
+      e.error === 'not-allowed' || e.error === 'service-not-allowed'
+        ? 'denied'
+        : e.error === 'network'
+          ? 'network'
+          : e.error === 'audio-capture'
+            ? 'nomic'
+            : 'failed',
+    )
   }
   rec.onend = handlers.onEnd
   try {
@@ -103,6 +112,33 @@ export function chunks(text: string): string[] {
     else out.push(s)
   }
   return out
+}
+
+const SCRIPTS: [RegExp, string][] = [
+  [/[ऀ-ॿ]/g, 'hi-IN'],
+  [/[ఀ-౿]/g, 'te-IN'],
+  [/[஀-௿]/g, 'ta-IN'],
+  [/[ಀ-೿]/g, 'kn-IN'],
+  [/[ഀ-ൿ]/g, 'ml-IN'],
+  [/[a-z]/gi, 'en-IN'],
+]
+
+/**
+ * The language an answer is actually written in (by its most used script), so it is read with the right
+ * voice even when the farmer asked in a different language from the app's.
+ */
+export function answerLanguage(text: string, fallback: string): string {
+  let best = fallback
+  let bestCount = 0
+  for (const [re, bcp47] of SCRIPTS) {
+    // Latin letters appear in Indic answers too (MSP, KVK, eNAM), so English needs a clear majority.
+    const count = (text.match(re)?.length ?? 0) * (bcp47 === 'en-IN' ? 0.3 : 1)
+    if (count > bestCount) {
+      best = bcp47
+      bestCount = count
+    }
+  }
+  return best
 }
 
 /**

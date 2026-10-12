@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { asciiDigits } from '../../shared/text'
 import { Card, Notice, PageHeader, Segmented, inputClass } from '../components/ui'
 import type { MessageKey } from '../i18n'
 import { formatNumber, formatRupees } from '../lib/format'
@@ -26,7 +27,8 @@ function NumberField({ label, value, onChange }: { label: string; value: string;
   return (
     <label className="block text-sm">
       <span className="mb-1 block text-stone-700">{label}</span>
-      <input inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value.replace(/[^\d.]/g, ''))} className={inputClass} />
+      {/* Indic keyboards may type ౩ or ३: accept them as 3. */}
+      <input inputMode="decimal" value={value} onChange={(e) => onChange(asciiDigits(e.target.value).replace(/[^\d.]/g, ''))} className={inputClass} />
     </label>
   )
 }
@@ -38,20 +40,38 @@ const FERTILIZERS = [
   { key: 'fert.mop' as MessageKey, bag: 50 },
 ]
 
+const HECTARE_PER_ACRE = 0.404686
+
 function FertilizerCalc() {
   const { t } = useT()
-  const [f, set] = useSavedFields('calc.fert', { area: '1', n: '', p: '', k: '' })
+  // Soil Health Cards usually print kg per hectare; entering those as per acre would give 2.5x too much.
+  const [f, set] = useSavedFields('calc.fert', { area: '1', n: '', p: '', k: '', per: '' })
+  // Values saved before the unit choice existed were typed in as per acre.
+  const per = f.per === 'acre' || f.per === 'hectare' ? f.per : f.n || f.p || f.k ? 'acre' : 'hectare'
   const area = num(f.area)
+  const perAcre = per === 'acre' ? 1 : HECTARE_PER_ACRE
   // DAP covers phosphorus first and also supplies 18% N; urea tops up the remaining N; MOP covers potash.
-  const dap = num(f.p) / 0.46
-  const urea = Math.max(0, num(f.n) - dap * 0.18) / 0.46
-  const mop = num(f.k) / 0.6
+  const dap = (num(f.p) * perAcre) / 0.46
+  const urea = Math.max(0, num(f.n) * perAcre - dap * 0.18) / 0.46
+  const mop = (num(f.k) * perAcre) / 0.6
   const totals = [urea * area, dap * area, mop * area]
 
   return (
     <div className="flex flex-col gap-3">
       <Notice>{t('fert.help')}</Notice>
       <NumberField label={t('fert.area')} value={f.area} onChange={(v) => set('area', v)} />
+      <div>
+        <p className="mb-1 text-sm text-stone-700">{t('fert.unit')}</p>
+        <Segmented
+          value={per}
+          onChange={(v) => set('per', v)}
+          options={[
+            { value: 'hectare', label: t('units.hectare') },
+            { value: 'acre', label: t('units.acre') },
+          ]}
+        />
+        <p className="mt-1 text-sm text-stone-600">{t('fert.unitCheck')}</p>
+      </div>
       <div className="grid grid-cols-1 gap-3">
         <NumberField label={t('fert.n')} value={f.n} onChange={(v) => set('n', v)} />
         <NumberField label={t('fert.p')} value={f.p} onChange={(v) => set('p', v)} />
@@ -59,7 +79,7 @@ function FertilizerCalc() {
       </div>
       {area > 0 && totals.some((x) => x > 0) && (
         <Card className="border-brand-200 bg-brand-50">
-          <h3 className="mb-2 font-bold text-brand-900">{t('fert.result')}</h3>
+          <h3 className="mb-2 font-bold text-brand-900">{t('fert.result', { n: formatNumber(area) })}</h3>
           <ul className="space-y-2">
             {FERTILIZERS.map((fert, i) => (
               <li key={fert.key} className="flex items-baseline justify-between gap-2">

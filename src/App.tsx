@@ -24,19 +24,26 @@ const PAGES = {
   more: More,
 }
 
-export function App() {
-  const { settings } = useSettings()
+function Main() {
   const { route } = useRoute()
-
-  if (!settings.onboarded) return <Onboarding />
-
   const Page = PAGES[route]
   return (
     <div className="mx-auto min-h-dvh max-w-xl bg-soil-50 pb-16">
       <OfflineBanner />
       <Page />
-      <UpdateToast />
       <BottomNav current={route} />
     </div>
+  )
+}
+
+export function App() {
+  const { settings } = useSettings()
+  return (
+    <>
+      {settings.onboarded ? <Main /> : <Onboarding />}
+      {/* Also registers the service worker, so it stays mounted from the very first (onboarding) screen:
+          the app is cached for offline use from the farmer's first visit. */}
+      <UpdateToast />
+    </>
   )
 }
