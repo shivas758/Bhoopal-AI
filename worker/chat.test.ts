@@ -85,6 +85,13 @@ describe('prices', () => {
     expect(te).toContain('MSP (Kharif 2026-27): ₹2,441')
     expect(te).not.toContain('9,000')
     expect(priceAnswer({ ...result, forms: [] }, 'en', { today: '2026-10-12' })).toBeUndefined()
+    // Same price everywhere: no "₹1,000–₹1,000" range, in any language.
+    const flat = { ...result, msp: undefined, forms: priceForms([row('A', 1000), row('B', 1000), row('C', 1000)], 'district') }
+    for (const lang of ['en', 'hi', 'te', 'ta', 'kn', 'ml'] as const) {
+      const text = priceAnswer(flat, lang, { today: '2026-10-12' })!
+      expect(text).toContain('₹1,000/')
+      expect(text).not.toContain('₹1,000–₹1,000')
+    }
     expect(priceAnswer(result, 'en', { today: '2026-10-20' })).toContain('newest report')
   })
 })

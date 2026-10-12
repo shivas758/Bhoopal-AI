@@ -44,7 +44,9 @@ export function priceAnswer(result: PriceResult, lang: Lang, opts: { today: stri
       lines.push(`- ${where} (${date(row.date)}): ${price}`)
     }
     if (form.mandis >= 3) {
-      lines.push(fill(p.priceTypical, { typical: rupees.format(form.typicalPrice), low: rupees.format(form.lowest), high: rupees.format(form.highest) }))
+      // No "(₹1,000–₹1,000)" when every mandi has the same price.
+      const template = form.lowest === form.highest ? p.priceTypical.replace(/\s*\(₹\{low\}–₹\{high\}\)/, '') : p.priceTypical
+      lines.push(fill(template, { typical: rupees.format(form.typicalPrice), low: rupees.format(form.lowest), high: rupees.format(form.highest) }))
     }
   }
 
