@@ -16,17 +16,20 @@ export const en = {
   'common.offline': "You're offline. Showing saved information.",
   'common.select': 'Select',
   'crash.title': 'Oops! Something went wrong',
-  'crash.body': 'Sorry, BhooPal ran into a problem. Please try again. If it keeps happening, reset the app data (your language, crops and chats will be cleared). For farming help, call {kcc} (free).',
+  'crash.body':
+    'Sorry, BhooPal ran into a problem. Please try again. If it keeps happening, reset the app data (your language, crops and chats will be cleared). For farming help, call {kcc} (free).',
   'crash.reset': 'Reset app data',
 
   'error.network': "Couldn't connect. Check your internet and try again.",
   'error.busy': 'Lots of farmers are asking right now! Please try again in a few minutes.',
   'error.rate_limited': 'Too many questions at once. Please wait a minute and try again.',
   'error.not_configured': 'This service is not set up yet.',
-  'error.blocked': "I couldn't answer this one. If someone is unwell or hurt, call 108 (ambulance) or 112 now. For farming help, call the Kisan Call Centre (free):",
+  'error.blocked':
+    "I couldn't answer this one. If someone is unwell or hurt, call 108 (ambulance) or 112 now. For farming help, call the Kisan Call Centre (free):",
   'error.upstream': "The data service isn't answering right now. Please try again in a little while.",
   'error.generic': 'Oops, something went wrong. Please try again.',
-  'error.resting': "BhooPal's free AI is resting until about {time} today 😴 Meanwhile crop prices, weather, schemes and calculators still work, and the Kisan Call Centre answers for free:",
+  'error.resting':
+    "BhooPal's free AI is resting until about {time} today 😴 Meanwhile crop prices, weather, schemes and calculators still work, and the Kisan Call Centre answers for free:",
 
   'pwa.updateAvailable': 'A new version of BhooPal is available.',
   'pwa.update': 'Update',
@@ -90,13 +93,15 @@ export const en = {
   'chat.readAloud': 'Read aloud',
   'chat.stop': 'Stop',
   'chat.cutShort': 'The answer was cut short. Ask "continue" to get the rest.',
-  'chat.noVoice': 'Your phone has no voice for this language yet. Open Settings, search "Text-to-speech", choose Google Speech Services, then Install voice data and pick your language.',
+  'chat.noVoice':
+    'Your phone has no voice for this language yet. Open Settings, search "Text-to-speech", choose Google Speech Services, then Install voice data and pick your language.',
   'chat.thinking': 'Thinking about your question…',
   'chat.checkingPrices': "Checking today's mandi prices for you…",
   'chat.checkingWeather': 'Looking at the weather for your farm…',
   'chat.checkingSchemes': 'Looking up government schemes for you…',
   'chat.clear': 'Clear chat',
-  'chat.empty': "Namaste! 🙏 I'm BhooPal, your farming friend. Ask me about crops, pests, fertilizer, prices, weather or government schemes. Type, or tap the mic and speak!",
+  'chat.empty':
+    "Namaste! 🙏 I'm BhooPal, your farming friend. Ask me about crops, pests, fertilizer, prices, weather or government schemes. Type, or tap the mic and speak!",
   'chat.example1': "What is today's tomato price?",
   'chat.example2': 'How can I control pests in cotton without spending much?',
   'chat.example3': 'Which crop should I grow this season?',
@@ -137,7 +142,8 @@ export const en = {
   'advice.sprayWind': 'Too windy to spray ({wind} km/h). The spray will drift and be wasted.',
   'advice.noSprayWindow': 'No good time to spray in the next 24 hours.',
   'advice.heavyRain': 'Heavy rain expected {day}. Clear field drains and delay fertilizer.',
-  'advice.heatSafety': 'Very hot days ahead! Avoid field work from 12 to 3 pm, drink water often and rest in the shade. Dizziness, confusion or no sweating: call 108 at once.',
+  'advice.heatSafety':
+    'Very hot days ahead! Avoid field work from 12 to 3 pm, drink water often and rest in the shade. Dizziness, confusion or no sweating: call 108 at once.',
   'advice.rainSoon': 'Rain expected {day}. You can hold off irrigation and fertilizer top-dressing.',
   'advice.heat': 'Hot days ahead (up to {temp}°C). Irrigate in the morning or evening and mulch to save moisture.',
   'advice.dryWeek': 'No rain expected this week. Plan your irrigation.',
@@ -146,7 +152,8 @@ export const en = {
 
   'diagnose.title': 'Crop photo check',
   'diagnose.warnTitle': 'Experimental – may be wrong',
-  'diagnose.warnBody': 'This tool guesses from one photo and can be wrong. The wrong medicine wastes money and can harm your crop. Always confirm with your agriculture officer, KVK or the Kisan Call Centre ({kcc}) before buying any medicine.',
+  'diagnose.warnBody':
+    'This tool guesses from one photo and can be wrong. The wrong medicine wastes money and can harm your crop. Always confirm with your agriculture officer, KVK or the Kisan Call Centre ({kcc}) before buying any medicine.',
   'diagnose.agree': 'I understand. Continue',
   'diagnose.takePhoto': 'Take photo',
   'diagnose.gallery': 'Choose from gallery',
@@ -169,7 +176,8 @@ export const en = {
   'diagnose.steps': 'Safe steps you can take',
   'diagnose.expert': 'Medicines – ask an expert first',
   'diagnose.expertWarn': 'Do not buy these without asking your agriculture officer or a licensed dealer. Always follow the label dose.',
-  'diagnose.expertRemoved': 'Medicine names were removed here because the answer included doses or a banned pesticide. Ask your agriculture officer or KVK which medicine is safe.',
+  'diagnose.expertRemoved':
+    'Medicine names were removed here because the answer included doses or a banned pesticide. Ask your agriculture officer or KVK which medicine is safe.',
   'diagnose.healthy': 'The plant looks healthy in this photo.',
   'diagnose.notPlant': "This doesn't look like a photo of a crop.",
   'diagnose.cropMismatch': 'This photo seems to show {crop}, not the crop you named, so these guesses are less sure. Check the crop name and try again.',
@@ -240,8 +248,10 @@ export const en = {
   'settings.clearConfirm': 'Tap again to confirm',
   'settings.cleared': 'Cleared.',
   'settings.about': 'About BhooPal',
-  'settings.aboutBody': 'BhooPal is a free helper for farmers. Mandi prices come from Agmarknet (Government of India), weather from MET Norway, and answers from Google Gemini AI. AI can make mistakes, so confirm important decisions with experts.',
-  'settings.privacy': 'Your chats and settings are saved only on this phone. Your questions and photos are sent to Google Gemini to prepare answers. Do not share personal details like Aadhaar or bank numbers.',
+  'settings.aboutBody':
+    'BhooPal is a free helper for farmers. Mandi prices come from Agmarknet (Government of India), weather from MET Norway, and answers from Google Gemini AI. AI can make mistakes, so confirm important decisions with experts.',
+  'settings.privacy':
+    'Your chats and settings are saved only on this phone. Your questions and photos are sent to Google Gemini to prepare answers. Do not share personal details like Aadhaar or bank numbers.',
   'more.title': 'More',
 }
 

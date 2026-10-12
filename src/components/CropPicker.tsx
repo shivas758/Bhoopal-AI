@@ -7,8 +7,28 @@ import { inputClass } from './ui'
 
 // Most widely grown crops first, so most farmers find theirs without scrolling.
 const POPULAR = [
-  'Paddy', 'Cotton', 'Maize', 'Groundnut', 'Red Gram', 'Dry Chillies', 'Tomato', 'Onion', 'Sugarcane', 'Wheat', 'Turmeric',
-  'Ragi', 'Jowar', 'Bajra', 'Bengal Gram', 'Green Gram', 'Black Gram', 'Soyabean', 'Banana', 'Coconut', 'Arecanut', 'Mango',
+  'Paddy',
+  'Cotton',
+  'Maize',
+  'Groundnut',
+  'Red Gram',
+  'Dry Chillies',
+  'Tomato',
+  'Onion',
+  'Sugarcane',
+  'Wheat',
+  'Turmeric',
+  'Ragi',
+  'Jowar',
+  'Bajra',
+  'Bengal Gram',
+  'Green Gram',
+  'Black Gram',
+  'Soyabean',
+  'Banana',
+  'Coconut',
+  'Arecanut',
+  'Mango',
 ]
 
 export function CropPicker({ selected, onChange }: { selected: string[]; onChange: (crops: string[]) => void }) {

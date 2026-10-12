@@ -59,7 +59,9 @@ export function Weather() {
         {(!loc || !loc.gps || gpsFailed) && (
           <Card className="flex flex-col gap-3">
             {loc?.label && (
-              <p className="text-sm text-stone-600">{gpsFailed ? t('weather.gpsDenied', { place: loc.label }) : t('weather.showingFor', { place: loc.label })}</p>
+              <p className="text-sm text-stone-600">
+                {gpsFailed ? t('weather.gpsDenied', { place: loc.label }) : t('weather.showingFor', { place: loc.label })}
+              </p>
             )}
             {!loc && gpsFailed && <Notice tone="warn">{t('home.setState')}</Notice>}
             <button onClick={useGps} disabled={locating} className={secondaryButton}>
@@ -69,9 +71,7 @@ export function Weather() {
           </Card>
         )}
 
-        {loc && error && data && savedAt ? (
-          <Notice tone="warn">{t('common.updated', { time: formatDateTime(savedAt, bcp47) })}</Notice>
-        ) : null}
+        {loc && error && data && savedAt ? <Notice tone="warn">{t('common.updated', { time: formatDateTime(savedAt, bcp47) })}</Notice> : null}
         {loc && error && !data ? <ErrorNotice error={error} onRetry={reload} /> : null}
         {loc && loading && !data && <Spinner label={t('common.loading')} />}
 

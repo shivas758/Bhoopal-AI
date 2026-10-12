@@ -22,8 +22,7 @@ export default defineConfig({
       manifest: {
         name: 'BhooPal – Farm Helper',
         short_name: 'BhooPal',
-        description:
-          'Free farming help in English, हिन्दी, తెలుగు, தமிழ், ಕನ್ನಡ, മലയാളം: mandi prices, weather, crop advice and government schemes.',
+        description: 'Free farming help in English, हिन्दी, తెలుగు, தமிழ், ಕನ್ನಡ, മലയാളം: mandi prices, weather, crop advice and government schemes.',
         lang: 'en-IN',
         start_url: '/',
         scope: '/',

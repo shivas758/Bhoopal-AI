@@ -9,7 +9,7 @@
   "assets": {
     // The React PWA is served as static assets; only /api/* runs the Worker.
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*"],
   },
   "vars": {
     // Gemini models, best first. The free tier allows ~20 requests/day PER MODEL, so the Worker
@@ -21,7 +21,7 @@
     // Lower thinking = faster replies. Set to "" to use the model default. (Gemini 2.x gets a 512-token budget.)
     "GEMINI_THINKING_LEVEL": "low",
     // Sent to MET Norway and Agmarknet so they can identify us. MET Norway requires contact info (site URL or email).
-    "USER_AGENT": "BhooPal/0.1 (+https://bhoopal.shivasahith.workers.dev)"
+    "USER_AGENT": "BhooPal/0.1 (+https://bhoopal.shivasahith.workers.dev)",
   },
   // Per-IP limits so one user can't drain the free quotas. Counted per Cloudflare location and only roughly,
   // so they are a backstop, not exact accounting. A village behind one carrier IP shares them.
@@ -31,8 +31,8 @@
     { "name": "PHOTO_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } },
     { "name": "PRICES_LIMITER", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } },
     // Weather and district lists: cheap for us, but MET Norway bans abusive User-Agents.
-    { "name": "DATA_LIMITER", "namespace_id": "1004", "simple": { "limit": 60, "period": 60 } }
-  ]
+    { "name": "DATA_LIMITER", "namespace_id": "1004", "simple": { "limit": 60, "period": 60 } },
+  ],
   // Secrets (set with `npx wrangler secret put <NAME>`, or in .dev.vars for local dev):
   //   GEMINI_API_KEY     - free key from https://aistudio.google.com/apikey
   //   DATA_GOV_API_KEY   - free key from https://www.data.gov.in (My Account > API key)

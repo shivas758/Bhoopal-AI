@@ -107,7 +107,11 @@ export const COMMODITIES: Commodity[] = [
 ]
 
 export const normalizeName = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '')
-const words = (s: string) => s.toLowerCase().split(/[^a-z]+/).filter(Boolean)
+const words = (s: string) =>
+  s
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean)
 const SHORT_KEY = 5
 
 // Processed products sell at very different prices from the raw crop (tur dal vs tur, coconut oil vs coconut).
@@ -184,9 +188,7 @@ export function findCommoditiesInText(text: string): Commodity[] {
   }
   // "मूंग" inside "मूंगफली" is groundnut, not moong: drop matches inside a longer one.
   const found = new Set(
-    spans
-      .filter((s) => !spans.some((o) => o !== s && o.start <= s.start && o.end >= s.end && o.end - o.start > s.end - s.start))
-      .map((s) => s.item),
+    spans.filter((s) => !spans.some((o) => o !== s && o.start <= s.start && o.end >= s.end && o.end - o.start > s.end - s.start)).map((s) => s.item),
   )
   // English / Romanized: try two-word names first ("bitter gourd", "dry chillies"), then single words.
   const latin = words(t)

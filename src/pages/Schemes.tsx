@@ -61,7 +61,12 @@ export function Schemes() {
                   </ol>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <a href={s.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-stone-100 px-3 py-2 font-medium">
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-lg bg-stone-100 px-3 py-2 font-medium"
+                  >
                     <ExternalLink className="size-4" /> {t('schemes.website')}
                   </a>
                   {s.phones.map((p) => (

@@ -81,9 +81,7 @@ function WeatherCard() {
           {now ? <WeatherIcon kind={now.kind} className="size-10" /> : <CloudSun className="size-10 text-stone-300" />}
           <div className="flex-1">
             <p className="text-sm text-stone-600">{loc.label ?? t('weather.myLocation')}</p>
-            <p className="text-lg font-semibold">
-              {now ? `${Math.round(now.temp)}°C · ${t(`weather.kind.${now.kind}` as MessageKey)}` : t('feature.weather')}
-            </p>
+            <p className="text-lg font-semibold">{now ? `${Math.round(now.temp)}°C · ${t(`weather.kind.${now.kind}` as MessageKey)}` : t('feature.weather')}</p>
             {today && (
               <p className="text-sm text-stone-600">
                 {today.tMin}° / {today.tMax}° · {t('weather.rain')} {today.rainMm} mm
@@ -93,7 +91,9 @@ function WeatherCard() {
           <ChevronRight className="size-5 text-stone-400" />
         </div>
         {advice && (
-          <p className={`mt-3 rounded-lg px-3 py-2 text-sm ${advice.tone === 'warn' ? 'bg-amber-50 text-amber-950' : advice.tone === 'good' ? 'bg-brand-50 text-brand-900' : 'bg-stone-100'}`}>
+          <p
+            className={`mt-3 rounded-lg px-3 py-2 text-sm ${advice.tone === 'warn' ? 'bg-amber-50 text-amber-950' : advice.tone === 'good' ? 'bg-brand-50 text-brand-900' : 'bg-stone-100'}`}
+          >
             {t(advice.key, advice.vars)}
           </p>
         )}
@@ -140,7 +140,9 @@ function PriceCard({ crop }: { crop: Commodity }) {
       ) : (
         <>
           <p className="text-sm text-brand-900">
-            {data.scope === 'district' && data.district ? t('price.inDistrict', { district: data.district }) : t('price.acrossState', { state: state.names[lang] })}
+            {data.scope === 'district' && data.district
+              ? t('price.inDistrict', { district: data.district })
+              : t('price.acrossState', { state: state.names[lang] })}
           </p>
           {perQuintal && (
             <p className="text-lg font-bold text-brand-900">
@@ -167,7 +169,10 @@ function PriceCard({ crop }: { crop: Commodity }) {
       {savedAt && (error || Date.now() - savedAt > 3 * 3600 * 1000) && (
         <p className="mt-1 text-xs text-stone-600">{t('common.updated', { time: formatDateTime(savedAt, bcp47) })}</p>
       )}
-      <button onClick={() => goAsk({ crop: crop.id })} className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-brand-800 ring-1 ring-brand-200">
+      <button
+        onClick={() => goAsk({ crop: crop.id })}
+        className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-brand-800 ring-1 ring-brand-200"
+      >
         <MessageCircle className="size-4" /> {t('price.ask', { crop: name })}
       </button>
     </div>
@@ -193,7 +198,10 @@ function MyCropsCard() {
         <h2 className="flex-1 font-bold">{t('home.myCrops')}</h2>
       </div>
       {crops.length === 0 ? (
-        <button onClick={() => go('settings')} className="inline-flex items-center gap-1 rounded-full border border-dashed border-brand-600 px-3 py-2 text-sm font-medium text-brand-800">
+        <button
+          onClick={() => go('settings')}
+          className="inline-flex items-center gap-1 rounded-full border border-dashed border-brand-600 px-3 py-2 text-sm font-medium text-brand-800"
+        >
           <Plus className="size-4" /> {t('home.addCrops')}
         </button>
       ) : (
@@ -249,7 +257,11 @@ export function Home() {
         <MyCropsCard />
         <div className="grid grid-cols-2 gap-3">
           {FEATURES.map(({ route, label, Icon, tint, experimental }) => (
-            <button key={route} onClick={() => go(route)} className="flex flex-col items-start gap-2 rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm active:bg-stone-50">
+            <button
+              key={route}
+              onClick={() => go(route)}
+              className="flex flex-col items-start gap-2 rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm active:bg-stone-50"
+            >
               <span className={`rounded-xl p-2 ${tint}`}>
                 <Icon className="size-6" />
               </span>

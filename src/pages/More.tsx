@@ -18,7 +18,11 @@ export function More() {
       <PageHeader title={t('more.title')} back={null} />
       <main className="flex flex-col gap-2 p-3 pb-24">
         {ITEMS.map(({ route, label, Icon, tint, experimental }) => (
-          <button key={route} onClick={() => go(route)} className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm active:bg-stone-50">
+          <button
+            key={route}
+            onClick={() => go(route)}
+            className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm active:bg-stone-50"
+          >
             <span className={`rounded-xl p-2 ${tint}`}>
               <Icon className="size-6" />
             </span>

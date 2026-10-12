@@ -48,7 +48,11 @@ export function Settings() {
           <h2 className="font-bold">{t('settings.location')}</h2>
           <label className="text-sm">
             <span className="mb-1 block text-stone-600">{t('common.state')}</span>
-            <select value={settings.state ?? ''} onChange={(e) => update({ state: e.target.value, district: undefined, coords: undefined })} className={inputClass}>
+            <select
+              value={settings.state ?? ''}
+              onChange={(e) => update({ state: e.target.value, district: undefined, coords: undefined })}
+              className={inputClass}
+            >
               <option value="" disabled>
                 {t('common.select')}
               </option>
@@ -61,7 +65,12 @@ export function Settings() {
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-stone-600">{t('common.district')}</span>
-            <select value={settings.district ?? ''} onChange={(e) => update({ district: e.target.value || undefined })} disabled={!state} className={inputClass}>
+            <select
+              value={settings.district ?? ''}
+              onChange={(e) => update({ district: e.target.value || undefined })}
+              disabled={!state}
+              className={inputClass}
+            >
               <option value="">{t('common.allDistricts')}</option>
               {settings.district && !districts.data?.districts.some((d) => d.name === settings.district) && (
                 <option value={settings.district}>{settings.district}</option>

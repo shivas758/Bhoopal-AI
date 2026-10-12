@@ -120,12 +120,7 @@ function poolRetryAt(models: string[]) {
 }
 
 /** Calls the best Gemini model that still has free quota, moving down the pool on rate limits or outages. */
-export async function callGemini(
-  env: Env,
-  method: Method,
-  body: GeminiRequest,
-  opts: GeminiCallOptions = {},
-): Promise<{ res: Response; model: string }> {
+export async function callGemini(env: Env, method: Method, body: GeminiRequest, opts: GeminiCallOptions = {}): Promise<{ res: Response; model: string }> {
   const now = Date.now()
   const all = opts.models ?? modelPool(env)
   const pool = all.filter((m) => (restingUntil.get(m) ?? 0) <= now && !opts.exclude?.includes(m))

@@ -150,8 +150,7 @@ export async function speak(text: string, bcp47: string, onDone?: () => void): P
   speechSynthesis.cancel()
   const voices = await voicesReady()
   const base = bcp47.slice(0, 2)
-  const voice =
-    voices.find((v) => v.lang.replace('_', '-') === bcp47) ?? voices.find((v) => v.lang.toLowerCase().startsWith(base))
+  const voice = voices.find((v) => v.lang.replace('_', '-') === bcp47) ?? voices.find((v) => v.lang.toLowerCase().startsWith(base))
   // If the browser reports voices but none for this language, an English voice would garble the text.
   if (voices.length && !voice) return false
 

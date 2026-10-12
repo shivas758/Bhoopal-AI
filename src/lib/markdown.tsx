@@ -2,13 +2,15 @@ import { Fragment, type ReactNode } from 'react'
 
 /** Renders **bold** without ever injecting HTML. */
 function inline(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-    part.startsWith('**') && part.endsWith('**') && part.length > 4 ? (
-      <strong key={i}>{part.slice(2, -2)}</strong>
-    ) : (
-      <Fragment key={i}>{part.replace(/(^|\s)\*(?=\S)|(?<=\S)\*(\s|$)/g, '$1$2')}</Fragment>
-    ),
-  )
+  return text
+    .split(/(\*\*[^*]+\*\*)/g)
+    .map((part, i) =>
+      part.startsWith('**') && part.endsWith('**') && part.length > 4 ? (
+        <strong key={i}>{part.slice(2, -2)}</strong>
+      ) : (
+        <Fragment key={i}>{part.replace(/(^|\s)\*(?=\S)|(?<=\S)\*(\s|$)/g, '$1$2')}</Fragment>
+      ),
+    )
 }
 
 /** Minimal, safe Markdown for chat answers: paragraphs, bullet/numbered lists, headings, bold. */

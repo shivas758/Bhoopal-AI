@@ -27,8 +27,7 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l)
 }
 
-const isStandalone = () =>
-  window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true
 const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
 
 /** "Install BhooPal" card for the home screen (Android prompt, or instructions on iPhone). */

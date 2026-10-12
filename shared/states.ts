@@ -10,13 +10,13 @@ export interface IndianState {
   lon: number
 }
 
-const s = (
-  id: string,
-  api: string[],
-  [hi, te, ta, kn, ml]: [string, string, string, string, string],
-  lat: number,
-  lon: number,
-): IndianState => ({ id, api, names: { en: id, hi, te, ta, kn, ml }, lat, lon })
+const s = (id: string, api: string[], [hi, te, ta, kn, ml]: [string, string, string, string, string], lat: number, lon: number): IndianState => ({
+  id,
+  api,
+  names: { en: id, hi, te, ta, kn, ml },
+  lat,
+  lon,
+})
 
 // South Indian states first: they're the main audience.
 export const STATES: IndianState[] = [
@@ -42,14 +42,26 @@ export const STATES: IndianState[] = [
   s('Delhi', ['NCT of Delhi', 'Delhi'], ['दिल्ली', 'ఢిల్లీ', 'டெல்லி', 'ದೆಹಲಿ', 'ഡൽഹി'], 28.61, 77.21),
   s('Himachal Pradesh', ['Himachal Pradesh'], ['हिमाचल प्रदेश', 'హిమాచల్ ప్రదేశ్', 'இமாச்சலப் பிரதேசம்', 'ಹಿಮಾಚಲ ಪ್ರದೇಶ', 'ഹിമാചൽ പ്രദേശ്'], 31.1, 77.17),
   s('Uttarakhand', ['Uttrakhand', 'Uttarakhand'], ['उत्तराखंड', 'ఉత్తరాఖండ్', 'உத்தராகண்ட்', 'ಉತ್ತರಾಖಂಡ', 'ഉത്തരാഖണ്ഡ്'], 30.32, 78.03),
-  s('Jammu and Kashmir', ['Jammu and Kashmir', 'Jammu & Kashmir'], ['जम्मू और कश्मीर', 'జమ్మూ కాశ్మీర్', 'ஜம்மு காஷ்மீர்', 'ಜಮ್ಮು ಮತ್ತು ಕಾಶ್ಮೀರ', 'ജമ്മു കശ്മീർ'], 34.08, 74.8),
+  s(
+    'Jammu and Kashmir',
+    ['Jammu and Kashmir', 'Jammu & Kashmir'],
+    ['जम्मू और कश्मीर', 'జమ్మూ కాశ్మీర్', 'ஜம்மு காஷ்மீர்', 'ಜಮ್ಮು ಮತ್ತು ಕಾಶ್ಮೀರ', 'ജമ്മു കശ്മീർ'],
+    34.08,
+    74.8,
+  ),
   s('Ladakh', ['Ladakh'], ['लद्दाख', 'లడఖ్', 'லடாக்', 'ಲಡಾಖ್', 'ലഡാക്ക്'], 34.16, 77.58),
   s('Assam', ['Assam'], ['असम', 'అస్సాం', 'அசாம்', 'ಅಸ್ಸಾಂ', 'അസം'], 26.14, 91.79),
   s('Tripura', ['Tripura'], ['त्रिपुरा', 'త్రిపుర', 'திரிபுரா', 'ತ್ರಿಪುರ', 'ത്രിപുര'], 23.83, 91.28),
   s('Meghalaya', ['Meghalaya'], ['मेघालय', 'మేఘాలయ', 'மேகாலயா', 'ಮೇಘಾಲಯ', 'മേഘാലയ'], 25.58, 91.89),
   s('Manipur', ['Manipur'], ['मणिपुर', 'మణిపూర్', 'மணிப்பூர்', 'ಮಣಿಪುರ', 'മണിപ്പൂർ'], 24.82, 93.94),
   s('Nagaland', ['Nagaland'], ['नागालैंड', 'నాగాలాండ్', 'நாகாலாந்து', 'ನಾಗಾಲ್ಯಾಂಡ್', 'നാഗാലാൻഡ്'], 25.67, 94.11),
-  s('Arunachal Pradesh', ['Arunachal Pradesh'], ['अरुणाचल प्रदेश', 'అరుణాచల్ ప్రదేశ్', 'அருணாச்சலப் பிரதேசம்', 'ಅರುಣಾಚಲ ಪ್ರದೇಶ', 'അരുണാചൽ പ്രദേശ്'], 27.08, 93.61),
+  s(
+    'Arunachal Pradesh',
+    ['Arunachal Pradesh'],
+    ['अरुणाचल प्रदेश', 'అరుణాచల్ ప్రదేశ్', 'அருணாச்சலப் பிரதேசம்', 'ಅರುಣಾಚಲ ಪ್ರದೇಶ', 'അരുണാചൽ പ്രദേശ്'],
+    27.08,
+    93.61,
+  ),
   s('Sikkim', ['Sikkim'], ['सिक्किम', 'సిక్కిం', 'சிக்கிம்', 'ಸಿಕ್ಕಿಂ', 'സിക്കിം'], 27.33, 88.61),
   s('Mizoram', ['Mizoram'], ['मिज़ोरम', 'మిజోరం', 'மிசோரம்', 'ಮಿಜೋರಾಂ', 'മിസോറം'], 23.73, 92.72),
   s('Chandigarh', ['Chandigarh'], ['चंडीगढ़', 'చండీగఢ్', 'சண்டிகர்', 'ಚಂಡೀಗಢ', 'ചണ്ഡീഗഢ്'], 30.73, 76.78),
@@ -64,7 +76,13 @@ export const STATES: IndianState[] = [
   s(
     'Dadra and Nagar Haveli and Daman and Diu',
     ['Dadra and Nagar Haveli and Daman and Diu', 'Dadra and Nagar Haveli', 'Daman and Diu'],
-    ['दादरा और नगर हवेली और दमन और दीव', 'దాద్రా నగర్ హవేలీ, డామన్ డయ్యూ', 'தாத்ரா நகர் ஹவேலி மற்றும் தமன் தியூ', 'ದಾದ್ರಾ ನಗರ್ ಹವೇಲಿ ಮತ್ತು ದಮನ್ ದಿಯು', 'ദാദ്ര നഗർ ഹവേലി, ദമൻ ദിയു'],
+    [
+      'दादरा और नगर हवेली और दमन और दीव',
+      'దాద్రా నగర్ హవేలీ, డామన్ డయ్యూ',
+      'தாத்ரா நகர் ஹவேலி மற்றும் தமன் தியூ',
+      'ದಾದ್ರಾ ನಗರ್ ಹವೇಲಿ ಮತ್ತು ದಮನ್ ದಿಯು',
+      'ദാദ്ര നഗർ ഹവേലി, ദമൻ ദിയു',
+    ],
     20.4,
     72.83,
   ),

@@ -1,7 +1,17 @@
 import { HELPLINES, SCHEMES, SCHEMES_CHECKED } from '../shared/schemes'
 import { DEFAULT_AGRI_OFFICE, STATE_AGRI_INFO } from '../shared/stateSchemes'
 import { findState } from '../shared/states'
-import { MAX_HISTORY, MAX_MESSAGE_CHARS, isLang, type ChatEvent, type ChatIntent, type ChatMessage, type ChatRequest, type Lang, type PriceResult } from '../shared/types'
+import {
+  MAX_HISTORY,
+  MAX_MESSAGE_CHARS,
+  isLang,
+  type ChatEvent,
+  type ChatIntent,
+  type ChatMessage,
+  type ChatRequest,
+  type Lang,
+  type PriceResult,
+} from '../shared/types'
 import { callGemini, readGeminiStream, toolHistoryAsText, toolResultText, type GeminiContent, type GeminiPart } from './gemini'
 import { detectIntents } from './intents'
 import { createOutputFilter } from './outputFilter'
@@ -42,8 +52,7 @@ const TOOLS = [
       },
       {
         name: 'get_weather_forecast',
-        description:
-          "Hourly forecast for the next 24 hours and daily forecast for 7 days (temperature, rain, wind, humidity) at the farmer's location.",
+        description: "Hourly forecast for the next 24 hours and daily forecast for 7 days (temperature, rain, wind, humidity) at the farmer's location.",
       },
       {
         name: 'get_scheme_info',

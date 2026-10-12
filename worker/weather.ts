@@ -136,7 +136,9 @@ export async function weatherTool(
   const w = await getForecast(env, coords.lat, coords.lon)
   const from = Date.now() - 3600_000
   return {
-    location: farmer.coords ? "farmer's GPS location" : `${farmer.stateName} state capital (approximate; for village-level weather the farmer can allow location in the Weather tab)`,
+    location: farmer.coords
+      ? "farmer's GPS location"
+      : `${farmer.stateName} state capital (approximate; for village-level weather the farmer can allow location in the Weather tab)`,
     timezone: 'IST',
     now: timeIST(Date.now()),
     next24Hours: w.hours

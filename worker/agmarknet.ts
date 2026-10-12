@@ -69,9 +69,7 @@ function getFilters(env: Env): Promise<Filters> {
     const { data } = (await res.json()) as FiltersResponse
     return {
       states: data.state_data.filter((s) => isReal(s.state_id)).map((s) => ({ id: s.state_id, name: s.state_name })),
-      districts: data.district_data
-        .filter((d) => isReal(d.id) && d.state_id !== null)
-        .map((d) => ({ id: d.id, stateId: d.state_id!, name: d.district_name })),
+      districts: data.district_data.filter((d) => isReal(d.id) && d.state_id !== null).map((d) => ({ id: d.id, stateId: d.state_id!, name: d.district_name })),
       commodities: data.cmdt_data.filter((c) => isReal(c.cmdt_id)).map((c) => ({ id: c.cmdt_id, name: c.cmdt_name })),
     }
   })
@@ -142,17 +140,15 @@ export async function agmarknetMarketPrices(
         })
         return rows
           .filter((r) => r.status === 'Reported Markets' && Number(r.modal_price_wt) > 0)
-          .map(
-            (r): MarketPrice => ({
-              market: r.mkt_name.trim(),
-              district: r.district_name,
-              commodity: r.cmdt_name,
-              date,
-              modalPrice: Number(r.modal_price_wt),
-              unit: r.unit_name_price ?? 'Rs./Quintal',
-              arrival: r.arrival_qty ? `${r.arrival_qty} ${r.unit_name_arrival ?? ''}`.trim() : undefined,
-            }),
-          )
+          .map((r): MarketPrice => ({
+            market: r.mkt_name.trim(),
+            district: r.district_name,
+            commodity: r.cmdt_name,
+            date,
+            modalPrice: Number(r.modal_price_wt),
+            unit: r.unit_name_price ?? 'Rs./Quintal',
+            arrival: r.arrival_qty ? `${r.arrival_qty} ${r.unit_name_arrival ?? ''}`.trim() : undefined,
+          }))
       })
     }),
   )

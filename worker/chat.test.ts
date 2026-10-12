@@ -19,7 +19,7 @@ describe('parseRequest', () => {
   })
 
   test('a question re-sent after an error is merged into one turn', () => {
-    const r = parseRequest({ lang: 'en', messages: [user('price?'), user('price please'), { role: 'model', text: '' }] .slice(0, 2) })
+    const r = parseRequest({ lang: 'en', messages: [user('price?'), user('price please'), { role: 'model', text: '' }].slice(0, 2) })
     expect(r.messages).toEqual([{ role: 'user', text: 'price?\n\nprice please' }])
     expect(r.historyCut).toBe(false)
   })
@@ -53,7 +53,14 @@ describe('detectIntents', () => {
 })
 
 describe('prices', () => {
-  const row = (market: string, modalPrice: number, commodity = 'Tomato', date = '2026-10-12') => ({ market, district: 'Kolar', date, modalPrice, unit: 'Rs./Quintal', commodity })
+  const row = (market: string, modalPrice: number, commodity = 'Tomato', date = '2026-10-12') => ({
+    market,
+    district: 'Kolar',
+    date,
+    modalPrice,
+    unit: 'Rs./Quintal',
+    commodity,
+  })
 
   test('flags outliers and keeps rows near the median', () => {
     const forms = priceForms([row('A', 1000), row('B', 1100), row('C', 1200), row('D', 9000), row('E', 1050)], 'state')
@@ -74,7 +81,15 @@ describe('prices', () => {
       state: 'Telangana',
       district: 'Warangal',
       scope: 'district',
-      forms: priceForms([row('Warangal', 2200, 'Paddy(Dhan)(Common)'), row('Jangaon', 2300, 'Paddy(Dhan)(Common)'), row('Narsampet', 2250, 'Paddy(Dhan)(Common)'), row('X', 9000, 'Paddy(Dhan)(Common)')], 'district'),
+      forms: priceForms(
+        [
+          row('Warangal', 2200, 'Paddy(Dhan)(Common)'),
+          row('Jangaon', 2300, 'Paddy(Dhan)(Common)'),
+          row('Narsampet', 2250, 'Paddy(Dhan)(Common)'),
+          row('X', 9000, 'Paddy(Dhan)(Common)'),
+        ],
+        'district',
+      ),
       msp: { price: 2441, season: 'Kharif 2026-27' },
       howToRead: '',
       source: 'test',

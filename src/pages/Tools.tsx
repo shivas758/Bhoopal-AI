@@ -86,7 +86,9 @@ function FertilizerCalc() {
                 <span className="font-medium">{t(fert.key)}</span>
                 <span className="text-right">
                   <span className="text-lg font-bold">{formatNumber(Math.round(totals[i]))} kg</span>
-                  <span className="block text-xs text-stone-600">{t('fert.bags', { n: formatNumber(Math.round((totals[i] / fert.bag) * 10) / 10), size: fert.bag })}</span>
+                  <span className="block text-xs text-stone-600">
+                    {t('fert.bags', { n: formatNumber(Math.round((totals[i] / fert.bag) * 10) / 10), size: fert.bag })}
+                  </span>
                 </span>
               </li>
             ))}
@@ -183,7 +185,13 @@ function Converter({ title, units }: { title: MessageKey; units: { key: MessageK
     <Card className="flex flex-col gap-3">
       <h3 className="font-bold">{t(title)}</h3>
       <div className="flex gap-2">
-        <input inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value.replace(/[^\d.]/g, ''))} aria-label={t('units.value')} className={`${inputClass} flex-1`} />
+        <input
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => setValue(e.target.value.replace(/[^\d.]/g, ''))}
+          aria-label={t('units.value')}
+          className={`${inputClass} flex-1`}
+        />
         <select value={from} onChange={(e) => setFrom(Number(e.target.value))} className={`${inputClass} w-auto`}>
           {units.map((u, i) => (
             <option key={u.key} value={i}>

@@ -9,16 +9,39 @@ const digitsOnly = (s: string) => s.replace(/\D/g, '')
 const ALLOWED = new Set([...HELPLINES.map((h) => h.phone), ...SCHEMES.flatMap((s) => s.phones), ...EXTRA_ALLOWED_PHONES, '108', '112'].map(digitsOnly))
 
 // Mobiles (+91 optional), 1800/1900 toll-free numbers, landlines with an STD code and a separator.
-const LONG_NUMBER = /(?<![\d+])(?:(?:\+91|0091)[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)|(?<!\d)1[89]00[\s-]?\d{2,4}[\s-]?\d{3,4}(?!\d)|(?<!\d)0\d{2,4}[\s-]\d{6,8}(?!\d)/g
+const LONG_NUMBER =
+  /(?<![\d+])(?:(?:\+91|0091)[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)|(?<!\d)1[89]00[\s-]?\d{2,4}[\s-]?\d{3,4}(?!\d)|(?<!\d)0\d{2,4}[\s-]\d{6,8}(?!\d)/g
 
 // Answers are full of other numbers (doses, rupees, years), so a short code counts only right after a call word.
 const CALL_WORDS = [
-  'call', 'dial', 'phone', 'helpline', 'whatsapp', 'ring',
-  'कॉल', 'फोन', 'फ़ोन', 'हेल्पलाइन', 'डायल',
-  'కాల్', 'ఫోన్', 'హెల్ప్‌లైన్', 'హెల్ప్లైన్',
-  'அழை', 'கால்', 'போன்', 'ஃபோன்', 'உதவி எண்',
-  'ಕರೆ', 'ಫೋನ್', 'ಸಹಾಯವಾಣಿ',
-  'വിളി', 'ഫോൺ', 'കോൾ', 'ഹെൽപ്‌ലൈൻ', 'ഹെൽപ്ലൈൻ',
+  'call',
+  'dial',
+  'phone',
+  'helpline',
+  'whatsapp',
+  'ring',
+  'कॉल',
+  'फोन',
+  'फ़ोन',
+  'हेल्पलाइन',
+  'डायल',
+  'కాల్',
+  'ఫోన్',
+  'హెల్ప్‌లైన్',
+  'హెల్ప్లైన్',
+  'அழை',
+  'கால்',
+  'போன்',
+  'ஃபோன்',
+  'உதவி எண்',
+  'ಕರೆ',
+  'ಫೋನ್',
+  'ಸಹಾಯವಾಣಿ',
+  'വിളി',
+  'ഫോൺ',
+  'കോൾ',
+  'ഹെൽപ്‌ലൈൻ',
+  'ഹെൽപ്ലൈൻ',
 ]
 const SHORT_CODE = new RegExp(`(?:${CALL_WORDS.join('|')})[^\\d\\n]{0,20}?(?<![\\d-])(\\d{3,6})(?![\\s-]?\\d)`, 'gi')
 

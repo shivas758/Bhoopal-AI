@@ -67,7 +67,12 @@ export function dropOldOfflineCopies() {
   try {
     for (const key of Object.keys(localStorage)) {
       const name = key.slice(PREFIX.length)
-      if (key.startsWith(PREFIX) && (name.startsWith('offline:') || name.startsWith('offline-index')) && !name.startsWith(OFFLINE_PREFIX) && name !== OFFLINE_INDEX) {
+      if (
+        key.startsWith(PREFIX) &&
+        (name.startsWith('offline:') || name.startsWith('offline-index')) &&
+        !name.startsWith(OFFLINE_PREFIX) &&
+        name !== OFFLINE_INDEX
+      ) {
         localStorage.removeItem(key)
       }
     }

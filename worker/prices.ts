@@ -133,8 +133,7 @@ export function matchState(name: string | undefined): IndianState | undefined {
   if (!name) return undefined
   const n = name.trim().toLowerCase().replace(/&/g, 'and')
   return STATES.find(
-    (st) =>
-      st.id.toLowerCase() === n || st.api.some((a) => a.toLowerCase() === n) || Object.values(st.names).some((v) => v.toLowerCase() === n),
+    (st) => st.id.toLowerCase() === n || st.api.some((a) => a.toLowerCase() === n) || Object.values(st.names).some((v) => v.toLowerCase() === n),
   )
 }
 
@@ -215,7 +214,9 @@ export async function mandiPricesTool(
   args: { commodity?: unknown; state?: unknown; district?: unknown },
   farmer: { state?: string; district?: string; crops?: string[] },
 ): Promise<PriceResult | { error: string }> {
-  const commodity = String(args.commodity ?? '').trim().slice(0, 80)
+  const commodity = String(args.commodity ?? '')
+    .trim()
+    .slice(0, 80)
   if (!commodity) return { error: 'Which crop? Ask the farmer.' }
   const state = matchState(typeof args.state === 'string' ? args.state : undefined) ?? findState(farmer.state)
   if (!state) return { error: 'Unknown state. Ask the farmer which state and district they are in.' }

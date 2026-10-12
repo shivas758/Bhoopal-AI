@@ -15,12 +15,22 @@ export interface BannedPesticide {
 
 export const BANNED_PESTICIDES: BannedPesticide[] = [
   // Insecticides (Prohibition) Order 2023, S.O. 4294(E): 36% SL registrations cancelled after a one-year sell-off.
-  { active: 'Monocrotophos', brands: ['Monocil', 'Nuvacron', 'Phoskill'], status: 'banned 2023-24', aliases: ['मोनोक्रोटोफॉस', 'మోనోక్రోటోఫాస్', 'மோனோகுரோட்டோபாஸ்', 'ಮೋನೋಕ್ರೊಟೊಫಾಸ್', 'മോണോക്രോട്ടോഫോസ്'] },
+  {
+    active: 'Monocrotophos',
+    brands: ['Monocil', 'Nuvacron', 'Phoskill'],
+    status: 'banned 2023-24',
+    aliases: ['मोनोक्रोटोफॉस', 'మోనోక్రోటోఫాస్', 'மோனோகுரோட்டோபாஸ்', 'ಮೋನೋಕ್ರೊಟೊಫಾಸ್', 'മോണോക്രോട്ടോഫോസ്'],
+  },
   { active: 'Dicofol', brands: ['Kelthane'], status: 'banned 2023' },
   { active: 'Dinocap', brands: ['Karathane'], status: 'banned 2023' },
   { active: 'Methomyl', brands: ['Lannate', 'Dunet'], status: 'banned 2023' },
   // Reported final order S.O. 5234(E), 22 Sep 2026, cancelling all registrations. Confirm on egazette.gov.in.
-  { active: 'Paraquat', brands: ['Gramoxone'], status: 'registrations cancelled Sept 2026', aliases: ['पैराक्वाट', 'పారాక్వాట్', 'பாராகுவாட்', 'ಪ್ಯಾರಾಕ್ವಾಟ್', 'പാരക്വാറ്റ്'] },
+  {
+    active: 'Paraquat',
+    brands: ['Gramoxone'],
+    status: 'registrations cancelled Sept 2026',
+    aliases: ['पैराक्वाट', 'పారాక్వాట్', 'பாராகுவாட்', 'ಪ್ಯಾರಾಕ್ವಾಟ್', 'പാരക്വാറ്റ്'],
+  },
   { active: 'Phorate', brands: ['Thimet'], status: 'banned 2020', aliases: ['फोरेट', 'ఫోరేట్', 'போரேட்', 'ಫೋರೇಟ್', 'ഫോറേറ്റ്'] },
   { active: 'Triazophos', brands: ['Hostathion'], status: 'banned 2020' },
   { active: 'Dichlorvos', brands: ['Nuvan'], status: 'banned 2020', aliases: ['ddvp'] },
@@ -37,7 +47,12 @@ export const BANNED_PESTICIDES: BannedPesticide[] = [
   { active: 'Thiometon', brands: ['Ekatin'], status: 'banned 2018' },
   { active: 'Tridemorph', brands: ['Calixin'], status: 'banned 2018' },
   { active: 'Trifluralin', brands: ['Treflan'], status: 'banned 2018' },
-  { active: 'Endosulfan', brands: ['Thiodan', 'Endocel'], status: 'banned 2011', aliases: ['एंडोसल्फान', 'ఎండోసల్ఫాన్', 'எண்டோசல்பான்', 'ಎಂಡೋಸಲ್ಫಾನ್', 'എൻഡോസൾഫാൻ'] },
+  {
+    active: 'Endosulfan',
+    brands: ['Thiodan', 'Endocel'],
+    status: 'banned 2011',
+    aliases: ['एंडोसल्फान', 'ఎండోసల్ఫాన్', 'எண்டோசல்பான்', 'ಎಂಡೋಸಲ್ಫಾನ್', 'എൻഡോസൾഫാൻ'],
+  },
   { active: 'BHC (HCH)', brands: [], status: 'banned', aliases: ['bhc', 'hch', 'benzene hexachloride'] },
   { active: 'Aldrin', brands: [], status: 'banned' },
   { active: 'Dieldrin', brands: [], status: 'banned' },
@@ -49,9 +64,7 @@ export const BANNED_PESTICIDES: BannedPesticide[] = [
 ]
 
 /** Allowed only in one restricted form; the AI should not recommend them, and should send the farmer to an officer. */
-export const RESTRICTED_PESTICIDES = [
-  { active: 'Carbofuran', brands: ['Furadan'], status: 'only 3% CG for specified crops (2023 Order); highly hazardous' },
-]
+export const RESTRICTED_PESTICIDES = [{ active: 'Carbofuran', brands: ['Furadan'], status: 'only 3% CG for specified crops (2023 Order); highly hazardous' }]
 
 /** One prompt sentence, regenerated from the lists above so the prompts and the filters never disagree. */
 export function bannedPesticidesSentence() {

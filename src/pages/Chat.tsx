@@ -362,7 +362,11 @@ export function Chat() {
               {m.text}
             </div>
           ) : (
-            <div key={i} lang={m.text ? answerLanguage(m.text, bcp47) : undefined} className="mr-4 self-start rounded-2xl rounded-bl-sm border border-stone-200 bg-white px-4 py-3 shadow-sm">
+            <div
+              key={i}
+              lang={m.text ? answerLanguage(m.text, bcp47) : undefined}
+              className="mr-4 self-start rounded-2xl rounded-bl-sm border border-stone-200 bg-white px-4 py-3 shadow-sm"
+            >
               {m.text ? (
                 <>
                   <Markdown text={m.text} />
@@ -375,7 +379,10 @@ export function Chat() {
                       </span>
                     )
                   ) : (
-                    <button onClick={() => void readAloud(i, m.text)} className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 text-sm font-medium text-stone-700">
+                    <button
+                      onClick={() => void readAloud(i, m.text)}
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 text-sm font-medium text-stone-700"
+                    >
                       {speakingIndex === i ? <Square className="size-4" /> : <Volume2 className="size-4" />}
                       {speakingIndex === i ? t('chat.stop') : t('chat.readAloud')}
                     </button>
@@ -402,7 +409,11 @@ export function Chat() {
 
       <div className="pb-safe fixed inset-x-0 bottom-[60px] z-20 border-t border-stone-200 bg-soil-50 px-3 pt-2">
         {countdown !== null ? (
-          <button type="button" onClick={cancelCountdown} className="mx-auto mb-1.5 block w-full max-w-xl rounded-lg bg-amber-100 py-1.5 text-center text-sm font-semibold text-amber-950">
+          <button
+            type="button"
+            onClick={cancelCountdown}
+            className="mx-auto mb-1.5 block w-full max-w-xl rounded-lg bg-amber-100 py-1.5 text-center text-sm font-semibold text-amber-950"
+          >
             {t('chat.sendingIn', { n: countdown })}
           </button>
         ) : (
@@ -436,11 +447,21 @@ export function Chat() {
             className="max-h-32 min-h-[52px] flex-1 resize-none rounded-2xl border border-stone-300 bg-white px-4 py-3 outline-none placeholder:text-stone-500 focus:border-brand-600"
           />
           {busy ? (
-            <button type="button" onClick={() => abortRef.current?.abort()} aria-label={t('chat.stop')} className="shrink-0 rounded-full bg-stone-700 p-3.5 text-white">
+            <button
+              type="button"
+              onClick={() => abortRef.current?.abort()}
+              aria-label={t('chat.stop')}
+              className="shrink-0 rounded-full bg-stone-700 p-3.5 text-white"
+            >
               <Square className="size-6" />
             </button>
           ) : (
-            <button type="submit" disabled={!input.trim()} aria-label={t('chat.send')} className="shrink-0 rounded-full bg-brand-700 p-3.5 text-white disabled:opacity-40">
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              aria-label={t('chat.send')}
+              className="shrink-0 rounded-full bg-brand-700 p-3.5 text-white disabled:opacity-40"
+            >
               <Send className="size-6" />
             </button>
           )}

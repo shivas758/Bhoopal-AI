@@ -4,18 +4,18 @@ A free, installable web app for small farmers, in **English, हिन्दी,
 
 On first launch the farmer picks a language, their state (any state or UT), their district (optional) and the crops they grow. All of these can be changed later in Settings.
 
-| Feature | Free resource used | Works offline? |
-| --- | --- | --- |
-| Ask anything in chat: crops, pests, livestock, schemes, selling and more | Google Gemini API free tier | No (history is saved) |
-| ↳ Mandi prices in chat (latest price at each mandi, plus MSP) | Agmarknet via data.gov.in; Agmarknet 2.0 when that's down | — |
-| ↳ Weather-aware advice in chat ("can I spray tomorrow?") | MET Norway (CC BY 4.0, commercial use OK) | — |
-| ↳ Scheme answers grounded in verified info | Built in (`shared/schemes.ts`, `shared/stateSchemes.ts`) | — |
-| "My crops" price card on the home screen (no AI call) | `GET /api/prices` → Agmarknet | Last prices |
-| Voice input and read-aloud | Phone's built-in speech engine (Web Speech API) | Partly |
-| Weather page + spray/irrigation advice | MET Norway | Last forecast |
-| Crop photo check (**experimental**, consent-gated) | Gemini vision | No |
-| Govt schemes and helplines page | Built in | Yes |
-| Fertilizer, cost/profit and unit calculators | Built in | Yes |
+| Feature                                                                  | Free resource used                                        | Works offline?        |
+| ------------------------------------------------------------------------ | --------------------------------------------------------- | --------------------- |
+| Ask anything in chat: crops, pests, livestock, schemes, selling and more | Google Gemini API free tier                               | No (history is saved) |
+| ↳ Mandi prices in chat (latest price at each mandi, plus MSP)            | Agmarknet via data.gov.in; Agmarknet 2.0 when that's down | —                     |
+| ↳ Weather-aware advice in chat ("can I spray tomorrow?")                 | MET Norway (CC BY 4.0, commercial use OK)                 | —                     |
+| ↳ Scheme answers grounded in verified info                               | Built in (`shared/schemes.ts`, `shared/stateSchemes.ts`)  | —                     |
+| "My crops" price card on the home screen (no AI call)                    | `GET /api/prices` → Agmarknet                             | Last prices           |
+| Voice input and read-aloud                                               | Phone's built-in speech engine (Web Speech API)           | Partly                |
+| Weather page + spray/irrigation advice                                   | MET Norway                                                | Last forecast         |
+| Crop photo check (**experimental**, consent-gated)                       | Gemini vision                                             | No                    |
+| Govt schemes and helplines page                                          | Built in                                                  | Yes                   |
+| Fertilizer, cost/profit and unit calculators                             | Built in                                                  | Yes                   |
 
 Everything a farmer saves (language, location, crops, chats) stays in the phone's local storage. There are no accounts.
 
@@ -25,21 +25,21 @@ Everything a farmer saves (language, location, crops, chats) stays in the phone'
 - **Backend:** a single Cloudflare Worker (`worker/`) on `/api/*`. The same Worker serves the static app.
 - **Chat** (`worker/chat.ts`, `worker/prompts.ts`): Gemini with three tools, `get_mandi_prices`, `get_weather_forecast` and `get_scheme_info`. The farmer's state, district and crops go into every request, so answers fit their farm.
   - **Personality:** BhooPal is a cheerful farming friend: a short friendly opener, praise for good practice, an encouraging close, 1–2 emojis (skipped when read aloud). It turns calm and serious for emergencies, crop loss, debt or distress (Tele-MANAS 14416 for a farmer who sounds hopeless). Edit "Your personality" in `chatSystemPrompt`.
-  - Price, weather and scheme data the question obviously needs is looked up *before* the first AI call (`worker/intents.ts`), so most questions cost one Gemini request.
+  - Price, weather and scheme data the question obviously needs is looked up _before_ the first AI call (`worker/intents.ts`), so most questions cost one Gemini request.
   - Price buttons (Home "Ask about this", the tomato example) send `intent: {kind: 'price'}` and are answered from Agmarknet with a localized template (`worker/priceAnswer.ts`, `shared/phrases.ts`): no AI call, and they keep working when the AI quota is used up.
 - Shared types, crop names, states, schemes, banned pesticides and MSPs are in `shared/`. UI strings are in `src/i18n/` (one file per language, type-checked against `en.ts`).
 - `npm run build` writes the app to `dist/client/` and the Worker to `dist/bhoopal/`.
 
 ### API
 
-| Route | What | Limit (per IP per minute) |
-| --- | --- | --- |
-| `GET /api/health` | `{ai, prices}`: which keys are configured | – |
-| `GET /api/weather?lat&lon` | MET forecast on a 0.05° grid; India only | 60 (`DATA_LIMITER`) |
-| `GET /api/districts?state` | District list (Agmarknet names) | 60 (`DATA_LIMITER`) |
-| `GET /api/prices?commodity&state&district` | Latest price per mandi, grouped by product form, with MSP | 60 (`PRICES_LIMITER`) |
-| `POST /api/chat` | Server-sent events: `text`, `tool`, `meta` (model), `cut`, `error` (with `retryAt` when the AI is resting), `done` | 20 (`CHAT_LIMITER`) |
-| `POST /api/diagnose` | Photo check (JSON) | 30 (`PHOTO_LIMITER`) |
+| Route                                      | What                                                                                                               | Limit (per IP per minute) |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------- |
+| `GET /api/health`                          | `{ai, prices}`: which keys are configured                                                                          | –                         |
+| `GET /api/weather?lat&lon`                 | MET forecast on a 0.05° grid; India only                                                                           | 60 (`DATA_LIMITER`)       |
+| `GET /api/districts?state`                 | District list (Agmarknet names)                                                                                    | 60 (`DATA_LIMITER`)       |
+| `GET /api/prices?commodity&state&district` | Latest price per mandi, grouped by product form, with MSP                                                          | 60 (`PRICES_LIMITER`)     |
+| `POST /api/chat`                           | Server-sent events: `text`, `tool`, `meta` (model), `cut`, `error` (with `retryAt` when the AI is resting), `done` | 20 (`CHAT_LIMITER`)       |
+| `POST /api/diagnose`                       | Photo check (JSON)                                                                                                 | 30 (`PHOTO_LIMITER`)      |
 
 POST routes accept only `application/json`, reject `Sec-Fetch-Site: cross-site`, and cap bodies at 64 KB (chat) / 4 MB (photo). Installed phones keep old app bundles, so wire changes must be additive.
 
@@ -47,7 +47,7 @@ POST routes accept only `application/json`, reject `Sec-Fetch-Site: cross-site`,
 
 1. Get two free keys:
    - **Gemini:** https://aistudio.google.com/apikey
-   - **data.gov.in** (optional; prices fall back to Agmarknet 2.0 without it): register at https://www.data.gov.in, then *My Account → Generate API key*.
+   - **data.gov.in** (optional; prices fall back to Agmarknet 2.0 without it): register at https://www.data.gov.in, then _My Account → Generate API key_.
 2. `cp .dev.vars.example .dev.vars` and fill the keys in.
 3. Run the app:
    ```sh
@@ -85,13 +85,14 @@ Before going live, edit `USER_AGENT` in `wrangler.jsonc` to include your site UR
   - `marketwise_price_arrival` gives the state average and the season's MSP.
 
   These endpoints are undocumented and may change: if prices fail, check `api.agmarknet.gov.in/v1/dashboard-data/` first. The CAPTCHA-protected report endpoints are deliberately not used.
+
 - **MET Norway:** coordinates are rounded to a 0.05° grid (~5 km, India only) and responses are cached for 30 minutes.
 - **Cloudflare free plan:** 100k requests/day and 10 ms CPU per request. Static files don't count against it, because the Worker only runs for `/api/*`. data.gov.in parsing is capped at 2,000 rows per state to stay inside the CPU limit.
 - **Cache:** upstream data is cached in each Worker isolate's memory. The Cache API calls in `cached()` (`worker/util.ts`) are a no-op on `*.workers.dev`, so until a shared store is added (plan P2.2/P2.3), each isolate fetches on its own. Bump `CACHE_VERSION` whenever a cached value's shape changes. The app's own offline copies are versioned too (`OFFLINE_VERSION` in `src/lib/storage.ts`).
 
 ## Safety decisions
 
-- **Crop photo check:** requires an explicit "I understand" before first use and always shows an *Experimental – may be wrong* banner. It lists *possible* problems with likelihoods, never a single verdict, and shows low-risk steps first. Chemical options are collapsed behind an "ask an expert first" warning, and every result has a one-tap call to the Kisan Call Centre (`KCC_PHONE` in `shared/schemes.ts`). The Worker enforces in code (`sanitize()` in `worker/diagnose.ts`) what the prompt asks: medicine suggestions with a dose (in any of the 6 languages) or a banned pesticide are removed and flagged; at most one problem is "likely"; everything is "less likely" on a poor photo or when the photo shows a different crop than the farmer named.
+- **Crop photo check:** requires an explicit "I understand" before first use and always shows an _Experimental – may be wrong_ banner. It lists _possible_ problems with likelihoods, never a single verdict, and shows low-risk steps first. Chemical options are collapsed behind an "ask an expert first" warning, and every result has a one-tap call to the Kisan Call Centre (`KCC_PHONE` in `shared/schemes.ts`). The Worker enforces in code (`sanitize()` in `worker/diagnose.ts`) what the prompt asks: medicine suggestions with a dose (in any of the 6 languages) or a banned pesticide are removed and flagged; at most one problem is "likely"; everything is "less likely" on a poor photo or when the photo shows a different crop than the farmer named.
 - **Chat prompt** (`worker/prompts.ts`):
   - forces live price, weather and scheme lookups instead of guesses, and treats tool rows as data (outlier prices are flagged as likely reporting errors);
   - puts integrated pest management first and lists pesticides banned in India by name and brand (`shared/pesticides.ts`);

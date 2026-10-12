@@ -278,8 +278,23 @@ export function Diagnose() {
 
             {photo && (
               <>
-                <input value={crop} onChange={(e) => setCrop(e.target.value)} placeholder={t('diagnose.crop')} aria-label={t('diagnose.crop')} className={inputClass} maxLength={60} />
-                <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('diagnose.note')} aria-label={t('diagnose.note')} className={inputClass} rows={2} maxLength={300} />
+                <input
+                  value={crop}
+                  onChange={(e) => setCrop(e.target.value)}
+                  placeholder={t('diagnose.crop')}
+                  aria-label={t('diagnose.crop')}
+                  className={inputClass}
+                  maxLength={60}
+                />
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder={t('diagnose.note')}
+                  aria-label={t('diagnose.note')}
+                  className={inputClass}
+                  rows={2}
+                  maxLength={300}
+                />
                 <button onClick={check} disabled={loading || !online} className={`${primaryButton} w-full`}>
                   {t('diagnose.check')}
                 </button>

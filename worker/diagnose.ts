@@ -15,15 +15,67 @@ const text = (v: unknown, max = 600) => (typeof v === 'string' ? v.slice(0, max)
 // ("Mancozeb 75% WP" is a product name), and Latin units are case-sensitive so formulation codes like
 // "Fipronil 0.3 G" (granules) don't count.
 const UNITS = [
-  'ml', 'mL', 'ML', 'millilit(?:re|er)s?', '[Ll]it(?:re|er)s?', 'ltrs?', 'l', 'L', 'gms?', '[Gg]rams?', 'grammes?', 'g', '[Kk]gs?', 'KG', '[Kk]ilo(?:gram)?s?', 'ppm', 'cc', '(?:table|tea)?spoons?',
-  'मिली', 'मि\\.ली', 'मिलीलीटर', 'लीटर', 'ली\\.', 'ग्राम', 'ग्रा\\.', 'किलो', 'किग्रा', 'कि\\.ग्रा',
-  'మి\\.లీ', 'మిల్లీ', 'మి\\.లి', 'లీటర', 'లీ\\.', 'గ్రాము', 'గ్రా\\.', 'కిలో', 'కి\\.గ్రా',
-  'மி\\.லி', 'மில்லி', 'லிட்டர', 'லி\\.', 'கிராம்', 'கி\\.கி', 'கிலோ',
-  'ಮಿ\\.ಲೀ', 'ಮಿಲಿ', 'ಮಿಲ್ಲಿ', 'ಲೀಟರ', 'ಗ್ರಾಂ', 'ಗ್ರಾ\\.', 'ಕಿಲೋ', 'ಕೆಜಿ',
-  'മി\\.ലി', 'മില്ലി', 'ലിറ്റർ', 'ഗ്രാം', 'കിലോ',
+  'ml',
+  'mL',
+  'ML',
+  'millilit(?:re|er)s?',
+  '[Ll]it(?:re|er)s?',
+  'ltrs?',
+  'l',
+  'L',
+  'gms?',
+  '[Gg]rams?',
+  'grammes?',
+  'g',
+  '[Kk]gs?',
+  'KG',
+  '[Kk]ilo(?:gram)?s?',
+  'ppm',
+  'cc',
+  '(?:table|tea)?spoons?',
+  'मिली',
+  'मि\\.ली',
+  'मिलीलीटर',
+  'लीटर',
+  'ली\\.',
+  'ग्राम',
+  'ग्रा\\.',
+  'किलो',
+  'किग्रा',
+  'कि\\.ग्रा',
+  'మి\\.లీ',
+  'మిల్లీ',
+  'మి\\.లి',
+  'లీటర',
+  'లీ\\.',
+  'గ్రాము',
+  'గ్రా\\.',
+  'కిలో',
+  'కి\\.గ్రా',
+  'மி\\.லி',
+  'மில்லி',
+  'லிட்டர',
+  'லி\\.',
+  'கிராம்',
+  'கி\\.கி',
+  'கிலோ',
+  'ಮಿ\\.ಲೀ',
+  'ಮಿಲಿ',
+  'ಮಿಲ್ಲಿ',
+  'ಲೀಟರ',
+  'ಗ್ರಾಂ',
+  'ಗ್ರಾ\\.',
+  'ಕಿಲೋ',
+  'ಕೆಜಿ',
+  'മി\\.ലി',
+  'മില്ലി',
+  'ലിറ്റർ',
+  'ഗ്രാം',
+  'കിലോ',
 ]
 const DIGIT_UNIT = new RegExp(`\\d[\\d.,/–-]*\\s*(?:${UNITS.join('|')})(?![A-Za-z])`)
-const PER_AREA = /per (?:litre|liter|acre|tank|hectare|pump)|\/\s*(?:litre|liter|l|acre|tank|ha)\b|प्रति (?:लीटर|एकड़|टंकी)|లీటరుకు|ఎకరాకు|ట్యాంకుకు|லிட்டருக்கு|ஏக்கருக்கு|டேங்க்|ಲೀಟರ್‌?ಗೆ|ಎಕರೆಗೆ|ಟ್ಯಾಂಕ್‌?ಗೆ|ലിറ്ററിന്|ഏക്കറിന്|ടാങ്കിന്/i
+const PER_AREA =
+  /per (?:litre|liter|acre|tank|hectare|pump)|\/\s*(?:litre|liter|l|acre|tank|ha)\b|प्रति (?:लीटर|एकड़|टंकी)|లీటరుకు|ఎకరాకు|ట్యాంకుకు|லிட்டருக்கு|ஏக்கருக்கு|டேங்க்|ಲೀಟರ್‌?ಗೆ|ಎಕರೆಗೆ|ಟ್ಯಾಂಕ್‌?ಗೆ|ലിറ്ററിന്|ഏക്കറിന്|ടാങ്കിന്/i
 
 /** True when text gives a quantity to use (a dose), in any of the app's languages. */
 export function hasDose(value: string) {
@@ -50,7 +102,12 @@ export function sanitize(raw: Partial<DiagnoseResult> & { crop_matches_farmer?: 
       if (sawHigh) likelihood = 'medium'
       sawHigh = true
     }
-    const steps = Array.isArray(p?.safe_steps) ? p.safe_steps.slice(0, 5).map((s) => text(s, 300)).filter(Boolean) : []
+    const steps = Array.isArray(p?.safe_steps)
+      ? p.safe_steps
+          .slice(0, 5)
+          .map((s) => text(s, 300))
+          .filter(Boolean)
+      : []
     const safeSteps = steps.filter((s) => {
       const banned = findBannedPesticide(s)
       if (banned) console.warn(`diagnose: dropped a safe step naming ${banned}`)

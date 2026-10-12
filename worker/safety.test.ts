@@ -81,7 +81,14 @@ describe('createOutputFilter', () => {
 })
 
 describe('sanitize (diagnosis)', () => {
-  const problem = (likelihood: string, expert = '') => ({ name: 'x', type: 'pest', likelihood, signs: 's', safe_steps: ['remove leaves'], expert_options: expert })
+  const problem = (likelihood: string, expert = '') => ({
+    name: 'x',
+    type: 'pest',
+    likelihood,
+    signs: 's',
+    safe_steps: ['remove leaves'],
+    expert_options: expert,
+  })
   const base = { is_plant_image: true, image_quality: 'good', crop: 'Tomato', looks_healthy: false, summary: 'Not sure.', retake_tips: '' }
 
   test('only one "likely"', () => {
@@ -95,7 +102,10 @@ describe('sanitize (diagnosis)', () => {
     expect(r.possible_problems[0].likelihood).toBe('low')
   })
   test('doses and banned names are removed from medicines', () => {
-    const r = sanitize({ ...base, possible_problems: [problem('medium', 'Ask about imidacloprid, 0.5 ml per litre'), problem('low', 'Ask about Monocrotophos')] } as never, false)
+    const r = sanitize(
+      { ...base, possible_problems: [problem('medium', 'Ask about imidacloprid, 0.5 ml per litre'), problem('low', 'Ask about Monocrotophos')] } as never,
+      false,
+    )
     expect(r.possible_problems.map((p) => [p.expert_options, p.expert_options_redacted])).toEqual([
       ['', true],
       ['', true],
