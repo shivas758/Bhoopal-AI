@@ -65,6 +65,7 @@
     // Build and deploy with `npm run deploy:staging`. Bindings and vars are not inherited, so they're repeated
     // here; secrets are set separately with `--env staging`. It shares the Gemini key, and so its quota.
     "staging": {
+      "secrets": { "required": ["GEMINI_API_KEY", "DATA_GOV_API_KEY"] },
       "vars": {
         "GEMINI_MODELS": "gemini-3.6-flash,gemini-3.7-flash,gemini-3.5-flash,gemini-2.5-flash,gemini-3.5-flash-lite",
         "GEMINI_THINKING_LEVEL": "low",
