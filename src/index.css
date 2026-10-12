@@ -1,0 +1,64 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-brand-50: #f0fdf4;
+  --color-brand-100: #dcfce7;
+  --color-brand-200: #bbf7d0;
+  --color-brand-600: #16a34a;
+  --color-brand-700: #15803d;
+  --color-brand-800: #166534;
+  --color-brand-900: #14532d;
+  --color-soil-50: #f7f7f2;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Noto Sans Telugu', 'Noto Sans Tamil',
+    'Noto Sans Kannada', 'Noto Sans Malayalam', 'Noto Sans Devanagari', sans-serif;
+}
+
+:root {
+  color-scheme: light;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  /* Slightly larger base size: easier to read outdoors and for older farmers. */
+  font-size: 17px;
+}
+
+body {
+  @apply bg-soil-50 text-stone-900 antialiased;
+  overscroll-behavior-y: none;
+}
+
+button,
+a,
+summary {
+  touch-action: manipulation;
+}
+
+input,
+select,
+textarea {
+  font-size: 1rem;
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgb(220 38 38 / 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 14px rgb(220 38 38 / 0);
+  }
+}
+.listening {
+  animation: pulse-ring 1.2s ease-out infinite;
+}

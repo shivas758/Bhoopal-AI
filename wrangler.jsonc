@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bhoopal",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  "assets": {
+    // The React PWA is served as static assets; only /api/* runs the Worker.
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    // Gemini models, best first. The free tier allows ~20 requests/day PER MODEL, so the Worker
+    // rotates through all of them; each farmer question uses 1-3 requests.
+    // Order from testing on farmer questions (Oct 2026): 3.6 gave the most accurate, complete answers.
+    // 3.8-flash is left out: it often stopped mid-answer after tool calls.
+    "GEMINI_MODELS": "gemini-3.6-flash,gemini-3.7-flash,gemini-3.5-flash,gemini-2.5-flash,gemini-3.5-flash-lite",
+    // Lower thinking = faster replies. Set to "" to use the model default.
+    "GEMINI_THINKING_LEVEL": "low",
+    // Sent to MET Norway and Agmarknet so they can identify us. MET Norway requires contact info (site URL or email).
+    "USER_AGENT": "BhooPal/0.1 (+https://bhoopal.shivasahith.workers.dev)"
+  },
+  // Per-IP limits on the AI endpoints so one user can't drain the free Gemini quota.
+  "ratelimits": [
+    { "name": "CHAT_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
+    { "name": "PHOTO_LIMITER", "namespace_id": "1002", "simple": { "limit": 5, "period": 60 } }
+  ]
+  // Secrets (set with `npx wrangler secret put <NAME>`, or in .dev.vars for local dev):
+  //   GEMINI_API_KEY     - free key from https://aistudio.google.com/apikey
+  //   DATA_GOV_API_KEY   - free key from https://www.data.gov.in (My Account > API key)
+}
