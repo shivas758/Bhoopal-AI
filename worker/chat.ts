@@ -1,4 +1,5 @@
-import { HELPLINES, SCHEMES, SCHEMES_CHECKED } from '../shared/schemes'
+import { HELPLINES } from '../shared/helplines'
+import { SCHEMES, SCHEMES_CHECKED } from '../shared/schemes'
 import { DEFAULT_AGRI_OFFICE, STATE_AGRI_INFO } from '../shared/stateSchemes'
 import { findState } from '../shared/states'
 import {
@@ -117,12 +118,19 @@ function schemeInfo(lang: Lang, stateId: string | undefined) {
   const state = stateId ? STATE_AGRI_INFO[stateId] : undefined
   return {
     lastChecked: SCHEMES_CHECKED,
-    schemes: SCHEMES.map((s) => ({ ...s.text[lang], ...(lang === 'en' ? {} : { name_en: s.text.en.name }), website: s.url, phones: s.phones })),
+    schemes: SCHEMES.map((s) => ({
+      ...s.text[lang],
+      ...(lang === 'en' ? {} : { name_en: s.text.en.name }),
+      website: s.url,
+      otherPages: s.links?.map((l) => l.url),
+      phones: s.phones,
+    })),
     helplines: HELPLINES.map((h) => ({ phone: h.phone, for: h.label[lang] })),
     stateSchemes: {
       state: stateId ?? 'unknown',
       names: state?.schemes ?? [],
       whereToConfirm: state?.office ?? DEFAULT_AGRI_OFFICE,
+      officialWebsite: state?.portal?.url,
       note: 'Never quote state scheme amounts or dates; tell the farmer to confirm at this office.',
     },
     note: 'Rules and amounts can change; tell the farmer to confirm at the agriculture office, bank or official website. Never pay agents.',
@@ -171,7 +179,12 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
         case 'get_mandi_prices':
           return await mandiPricesTool(env, args, farmer)
         case 'get_weather_forecast':
-          return await weatherTool(env, { coords: req.coords, stateName: state?.id, stateCoords: state && { lat: state.lat, lon: state.lon } })
+          return await weatherTool(env, {
+            coords: req.coords,
+            stateName: state?.id,
+            district: req.district,
+            stateCoords: state && { lat: state.lat, lon: state.lon },
+          })
         case 'get_scheme_info':
           return schemeInfo(req.lang, state?.id)
         default:

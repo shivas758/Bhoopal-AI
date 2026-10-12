@@ -1,3 +1,4 @@
+import { findDistrict } from '../shared/districts'
 import type { WeatherDay, WeatherHour, WeatherKind, WeatherResponse } from '../shared/types'
 import { BadRequest, UpstreamError, cached, json, upstreamFetch } from './util'
 
@@ -156,16 +157,21 @@ const timeIST = (ms: number) => new Date(ms + IST_MS).toISOString().slice(0, 16)
 /** The chat model's `get_weather_forecast` tool: a compact forecast for the farmer's location. */
 export async function weatherTool(
   env: Env,
-  farmer: { coords?: { lat: number; lon: number }; stateName?: string; stateCoords?: { lat: number; lon: number } },
+  farmer: { coords?: { lat: number; lon: number }; stateName?: string; district?: string; stateCoords?: { lat: number; lon: number } },
 ): Promise<Record<string, unknown>> {
-  const coords = farmer.coords && inIndia(farmer.coords.lat, farmer.coords.lon) ? farmer.coords : farmer.stateCoords
+  // The farmer's GPS fix, else the centre of their district, else (hundreds of km off) the state capital.
+  const gps = farmer.coords && inIndia(farmer.coords.lat, farmer.coords.lon) ? farmer.coords : undefined
+  const district = gps ? undefined : findDistrict(farmer.stateName, farmer.district)
+  const coords = gps ?? (district && { lat: district.lat, lon: district.lon }) ?? farmer.stateCoords
   if (!coords) return { error: 'Location unknown. Ask which state/district the farmer is in, or to allow location in the Weather tab.' }
   const w = await getForecast(env, coords.lat, coords.lon)
   const from = Date.now() - 3600_000
   return {
-    location: farmer.coords
+    location: gps
       ? "farmer's GPS location"
-      : `${farmer.stateName} state capital (approximate; for village-level weather the farmer can allow location in the Weather tab)`,
+      : district
+        ? `centre of ${district.name} district (approximate; for village-level weather the farmer can tap "Use my location" on the Weather page)`
+        : `${farmer.stateName} state capital (approximate, may be far from the farm; the farmer can set the district in Settings or tap "Use my location")`,
     timezone: 'IST',
     now: timeIST(Date.now()),
     next24Hours: w.hours

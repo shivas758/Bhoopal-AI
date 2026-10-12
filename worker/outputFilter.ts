@@ -1,6 +1,7 @@
 import { findBannedPesticide } from '../shared/pesticides'
 import { PHRASES, fill } from '../shared/phrases'
-import { EXTRA_ALLOWED_PHONES, HELPLINES, KCC_PHONE, SCHEMES } from '../shared/schemes'
+import { EXTRA_ALLOWED_PHONES, HELPLINES, KCC_PHONE } from '../shared/helplines'
+import { SCHEMES } from '../shared/schemes'
 import { asciiDigits } from '../shared/text'
 import type { Lang } from '../shared/types'
 

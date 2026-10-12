@@ -1,5 +1,5 @@
 import { bannedPesticidesSentence } from '../shared/pesticides'
-import { HELPLINES, KCC_PHONE, TELE_MANAS_PHONE } from '../shared/schemes'
+import { HELPLINES, KCC_PHONE, TELE_MANAS_PHONE } from '../shared/helplines'
 import { DEFAULT_AGRI_OFFICE, STATE_AGRI_INFO } from '../shared/stateSchemes'
 import { LANG_INFO, type Lang } from '../shared/types'
 import { indiaNow } from './util'

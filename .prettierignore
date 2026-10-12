@@ -5,3 +5,4 @@ dev-dist
 worker-configuration.d.ts
 package-lock.json
 migrations
+shared/districtData.ts
