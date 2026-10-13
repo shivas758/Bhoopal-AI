@@ -3,10 +3,12 @@ import { LANG_INFO, LANGS } from '../../shared/types'
 import { districtLabel } from '../../shared/districts'
 import { STATES, findState } from '../../shared/states'
 import { CropPicker } from '../components/CropPicker'
+import { PushSetting } from '../components/PushToggle'
 import { Card, PageHeader, inputClass } from '../components/ui'
 import { api } from '../lib/api'
 import { useOfflineData } from '../lib/hooks'
 import { formatDateTime } from '../lib/format'
+import { disablePush } from '../lib/push'
 import { clearAll } from '../lib/storage'
 import { useSettings, useT } from '../settings'
 
@@ -22,7 +24,9 @@ export function Settings() {
     if (!confirmClear) return setConfirmClear(true)
     // Keep the phone's id: clearing data must not reset its daily share of the free AI.
     clearAll(['settings', 'device'])
-    update({ coords: undefined })
+    // Also deletes what the server kept for the morning message.
+    if (settings.alerts) void disablePush().catch(() => {})
+    update({ coords: undefined, alerts: false })
     setConfirmClear(false)
     setCleared(true)
   }
@@ -94,6 +98,10 @@ export function Settings() {
         <Card>
           <h2 className="mb-3 font-bold">{t('settings.crops')}</h2>
           <CropPicker selected={settings.crops} onChange={(crops) => update({ crops })} />
+        </Card>
+
+        <Card>
+          <PushSetting />
         </Card>
 
         <Card>

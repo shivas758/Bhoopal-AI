@@ -37,6 +37,17 @@ export function useWeather() {
   return { loc, ...result }
 }
 
+/** Official warnings for the farm (district, or the GPS fix for mandal-level ones). Expired saved copies are hidden. */
+export function useAlerts() {
+  const { settings } = useSettings()
+  const { lang } = useT()
+  const { state, district, coords } = settings
+  const key = state || coords ? `alerts:${lang}:${state ?? ''}:${district ?? ''}:${coords ? `${coords.lat},${coords.lon}` : ''}` : null
+  const result = useOfflineData(key, () => api.alerts({ lang, state, district, lat: coords?.lat, lon: coords?.lon }))
+  const now = Date.now()
+  return { ...result, alerts: (result.data?.alerts ?? []).filter((a) => Date.parse(a.expires) > now) }
+}
+
 // ~1 km: plenty for farm weather, and the farmer's exact position never needs to leave the phone.
 const round2 = (n: number) => Math.round(n * 100) / 100
 

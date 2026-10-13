@@ -1,4 +1,5 @@
 import type {
+  AlertsResponse,
   ApiErrorBody,
   ApiErrorCode,
   ChatEvent,
@@ -7,6 +8,7 @@ import type {
   DiagnoseResult,
   DistrictsResponse,
   FeedbackRequest,
+  Lang,
   PricesResponse,
   WeatherResponse,
 } from '../../shared/types'
@@ -86,6 +88,17 @@ async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 30_0
   }
 }
 
+/** A POST answered with "204 No Content". */
+async function post(path: string, body: unknown): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: timeoutSignal(30_000) })
+  } catch {
+    throw new ApiError('network')
+  }
+  if (!res.ok) throw await errorFrom(res)
+}
+
 const qs = (params: Record<string, string | number | undefined>) =>
   new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== '') as [string, string][]).toString()
 
@@ -93,6 +106,12 @@ export const api = {
   districts: (state: string) => request<DistrictsResponse>(`/api/districts?${qs({ state })}`),
   weather: (lat: number, lon: number) => request<WeatherResponse>(`/api/weather?${qs({ lat: lat.toFixed(2), lon: lon.toFixed(2) })}`),
   prices: (commodity: string, state: string, district?: string) => request<PricesResponse>(`/api/prices?${qs({ commodity, state, district })}`),
+  alerts: (p: { lang: Lang; state?: string; district?: string; lat?: number; lon?: number }) =>
+    request<AlertsResponse>(`/api/alerts?${qs({ lang: p.lang, state: p.state, district: p.district, lat: p.lat?.toFixed(2), lon: p.lon?.toFixed(2) })}`),
+  pushKey: () => request<{ key: string }>('/api/push/key'),
+  pushSubscribe: (body: { endpoint: string; lang: Lang; state?: string; district?: string; coords?: { lat: number; lon: number } }) =>
+    post('/api/push/subscribe', body),
+  pushUnsubscribe: (endpoint: string) => post('/api/push/unsubscribe', { endpoint }),
   diagnose: (body: DiagnoseRequest) =>
     request<DiagnoseResult>(
       '/api/diagnose',

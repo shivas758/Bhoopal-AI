@@ -83,6 +83,8 @@ const Bubble = memo(function Bubble({ m, index, streaming, toolName, speaking, o
         <>
           <Markdown text={m.text} />
           {m.cut && <p className="mt-2 text-sm text-stone-700">{t('chat.cutShort')}</p>}
+          {/* Workers AI models ("@cf/…") only answer while every Gemini model is resting. */}
+          {m.model?.startsWith('@cf/') && <p className="mt-2 text-sm text-stone-700">{t('chat.backupNote')}</p>}
           {streaming ? (
             toolName && (
               <span role="status" className="mt-2 inline-flex items-center gap-2 text-sm text-stone-700">

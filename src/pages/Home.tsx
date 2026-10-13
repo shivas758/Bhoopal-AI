@@ -18,12 +18,13 @@ import { COMMODITIES, type Commodity } from '../../shared/commodities'
 import { districtLabel } from '../../shared/districts'
 import { findState } from '../../shared/states'
 import { Card, ErrorNotice, ExperimentalBadge } from '../components/ui'
+import { AlertBanner } from '../components/Alerts'
 import { InstallCard } from '../components/PwaPrompts'
 import { WeatherIcon } from '../components/WeatherIcon'
 import type { MessageKey } from '../i18n'
-import { farmAdvice } from '../lib/advice'
+import { farmAdvice } from '../../shared/advice'
 import { api } from '../lib/api'
-import { currentHour, headlineDay, useLocate, useWeather } from '../lib/data'
+import { currentHour, headlineDay, useAlerts, useLocate, useWeather } from '../lib/data'
 import { formatDate, formatDateTime, formatNumber, formatRupees } from '../lib/format'
 import { useOfflineData } from '../lib/hooks'
 import { go, goAsk, type Route } from '../lib/router'
@@ -74,6 +75,7 @@ function AskCard() {
 function WeatherCard() {
   const { t, lang, bcp47 } = useT()
   const { loc, data, savedAt, error } = useWeather()
+  const { alerts } = useAlerts()
   const { locate, locating } = useLocate()
   if (!loc) {
     return (
@@ -112,7 +114,13 @@ function WeatherCard() {
         </span>
         <ChevronRight className="size-5 text-stone-500" />
       </button>
-      {advice && (
+      {/* An official warning outranks our own advice. */}
+      {alerts[0] && (
+        <button onClick={() => go('weather')} className="block w-full text-left">
+          <AlertBanner alert={alerts[0]} />
+        </button>
+      )}
+      {advice && !alerts[0] && (
         <p
           className={`mt-3 rounded-lg px-3 py-2 text-sm ${advice.tone === 'warn' ? 'bg-amber-50 text-amber-950' : advice.tone === 'good' ? 'bg-brand-50 text-brand-900' : 'bg-stone-100'}`}
         >

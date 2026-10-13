@@ -2,11 +2,13 @@ import { CheckCircle2, Droplets, ExternalLink, Info, LocateFixed, MapPin, Refres
 import { useMemo } from 'react'
 import { findDistrict } from '../../shared/districts'
 import { findState } from '../../shared/states'
+import { OfficialAlerts } from '../components/Alerts'
+import { PushOffer } from '../components/PushToggle'
 import { Card, ErrorNotice, Notice, PageHeader, Spinner, secondaryButton } from '../components/ui'
 import { WeatherIcon } from '../components/WeatherIcon'
 import type { MessageKey } from '../i18n'
-import { farmAdvice } from '../lib/advice'
-import { currentHour, todayForecast, upcomingHours, useLocate, useWeather, type FarmLocation } from '../lib/data'
+import { farmAdvice } from '../../shared/advice'
+import { currentHour, todayForecast, upcomingHours, useAlerts, useLocate, useWeather, type FarmLocation } from '../lib/data'
 import { formatDate, formatDateTime, formatTime, todayInIndia } from '../lib/format'
 import { useSettings, useT } from '../settings'
 
@@ -57,6 +59,7 @@ function LocationCard({ loc }: { loc: FarmLocation | null }) {
 export function Weather() {
   const { t, lang, bcp47 } = useT()
   const { loc, data, loading, error, savedAt, reload } = useWeather()
+  const { alerts } = useAlerts()
 
   const hours = useMemo(() => (data ? upcomingHours(data) : []), [data])
   const now = data ? currentHour(data) : undefined
@@ -84,6 +87,7 @@ export function Weather() {
       />
       <main className="flex flex-col gap-3 p-3 pb-24">
         <LocationCard loc={loc} />
+        <OfficialAlerts alerts={alerts} />
 
         {loc && stale && savedAt ? <Notice tone="warn">{t('common.updated', { time: formatDateTime(savedAt, bcp47) })}</Notice> : null}
         {loc && error && !data ? <ErrorNotice error={error} onRetry={reload} /> : null}
@@ -144,12 +148,15 @@ export function Weather() {
               </Card>
             )}
 
+            <PushOffer />
+
             {now && (
               <Card className="px-0">
                 <div className="no-scrollbar flex gap-1 overflow-x-auto px-3">
                   {hours.slice(0, 24).map((h) => (
                     <div key={h.time} className="flex min-w-16 flex-col items-center gap-1 rounded-xl px-1 py-1 text-sm">
-                      <span className="whitespace-nowrap text-sm text-stone-600">{formatTime(h.time, bcp47)}</span>
+                      {/* "7:30 ఉదయం" is wider than the column: let the time of day wrap under the time. */}
+                      <span className="text-center text-sm leading-tight text-stone-600">{formatTime(h.time, bcp47)}</span>
                       <WeatherIcon kind={h.kind} className="size-6" />
                       <span className="font-semibold">{Math.round(h.temp)}°</span>
                       <span className={`text-sm ${h.rainMm > 0 ? 'text-sky-700' : 'text-stone-500'}`}>
@@ -168,13 +175,16 @@ export function Weather() {
                   .filter((d) => d.date >= todayInIndia())
                   .map((d) => (
                     <li key={d.date} className="flex items-center gap-3 py-2.5">
-                      <span className="w-24 shrink-0 font-medium">{dayName(d.date)}</span>
-                      <WeatherIcon kind={d.kind} className="size-7" />
-                      <span className="flex-1 truncate text-sm text-stone-700">{t(`weather.kind.${d.kind}` as MessageKey)}</span>
-                      <span className={`w-16 text-right text-sm ${d.rainMm > 0 ? 'text-sky-700' : 'text-stone-500'}`}>
+                      <WeatherIcon kind={d.kind} className="size-7 shrink-0" />
+                      {/* Day and sky on two lines: side by side, Indian-language sky names were cut to one letter. */}
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium">{dayName(d.date)}</span>
+                        <span className="block text-sm text-stone-700">{t(`weather.kind.${d.kind}` as MessageKey)}</span>
+                      </span>
+                      <span className={`w-16 shrink-0 text-right text-sm ${d.rainMm > 0 ? 'text-sky-700' : 'text-stone-500'}`}>
                         {d.rainMm} {t('weather.mm')}
                       </span>
-                      <span className="w-16 text-right font-semibold">
+                      <span className="w-16 shrink-0 text-right font-semibold">
                         {d.tMin}°/{d.tMax}°
                       </span>
                     </li>

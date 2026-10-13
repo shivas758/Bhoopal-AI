@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useRef } from 'react'
 import { BottomNav } from './components/BottomNav'
 import { UpdateToast } from './components/PwaPrompts'
+import { PushSync } from './components/PushToggle'
 import { OfflineBanner, Spinner } from './components/ui'
 import { useRoute, type Route } from './lib/router'
 import { Chat } from './pages/Chat'
@@ -53,6 +54,7 @@ export function App() {
       {/* Also registers the service worker, so it stays mounted from the very first (onboarding) screen:
           the app is cached for offline use from the farmer's first visit. */}
       <UpdateToast />
+      <PushSync />
     </>
   )
 }

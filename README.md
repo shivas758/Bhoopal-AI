@@ -4,19 +4,22 @@ A free, installable web app for small farmers, in **English, हिन्दी,
 
 On first launch the farmer picks a language, their state (any state or UT), their district (optional; one tap finds it from the phone's location) and the crops they grow. All of these can be changed later in Settings.
 
-| Feature                                                                  | Free resource used                                        | Works offline?        |
-| ------------------------------------------------------------------------ | --------------------------------------------------------- | --------------------- |
-| Ask anything in chat: crops, pests, livestock, schemes, selling and more | Google Gemini API free tier                               | No (history is saved) |
-| ↳ Mandi prices in chat (latest price at each mandi, plus MSP)            | Agmarknet via data.gov.in; Agmarknet 2.0 when that's down | —                     |
-| ↳ Weather-aware advice in chat ("can I spray tomorrow?")                 | MET Norway (CC BY 4.0, commercial use OK)                 | —                     |
-| ↳ Scheme answers grounded in verified info                               | Built in (`shared/schemes.ts`, `shared/stateSchemes.ts`)  | —                     |
-| "My crops" price card on the home screen (no AI call)                    | `GET /api/prices` → Agmarknet                             | Last prices           |
-| Voice input and read-aloud                                               | Phone's built-in speech engine (Web Speech API)           | Partly                |
-| Weather page + spray/irrigation/wind advice, IMD advisory link           | MET Norway                                                | Last forecast         |
-| Crop photo check (**experimental**, consent-gated), last 3 checks saved  | Gemini vision                                             | Saved checks          |
-| Govt schemes and helplines page, plus the state agriculture portal       | Built in                                                  | Yes                   |
-| Fertilizer (DAP, SSP, NPK complexes), cost/profit and unit calculators   | Built in                                                  | Yes                   |
-| Share answers, photo checks and the app (WhatsApp, any app)              | Web Share API, `wa.me` link, clipboard                    | —                     |
+| Feature                                                                  | Free resource used                                                         | Works offline?        |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | --------------------- |
+| Ask anything in chat: crops, pests, livestock, schemes, selling and more | Google Gemini API free tier                                                | No (history is saved) |
+| ↳ Mandi prices in chat (latest price at each mandi, plus MSP)            | Agmarknet via data.gov.in; Agmarknet 2.0 when that's down                  | —                     |
+| ↳ Weather-aware advice in chat ("can I spray tomorrow?")                 | MET Norway (CC BY 4.0, commercial use OK)                                  | —                     |
+| ↳ Scheme answers grounded in verified info                               | Built in (`shared/schemes.ts`, `shared/stateSchemes.ts`)                   | —                     |
+| "My crops" price card on the home screen (no AI call)                    | `GET /api/prices` → Agmarknet                                              | Last prices           |
+| Voice input and read-aloud                                               | Phone's built-in speech engine (Web Speech API)                            | Partly                |
+| Weather page + spray/irrigation/wind advice, IMD advisory link           | MET Norway                                                                 | Last forecast         |
+| Official weather warnings for the farmer's district (Home and Weather)   | NDMA SACHET (IMD and State Disaster Management Authorities, public domain) | Until they expire     |
+| Morning weather message at ~6 AM and serious official warnings (opt-in)  | Web Push (VAPID, no payload), D1, cron                                     | —                     |
+| Backup answers when every Gemini model has used its free quota           | Workers AI (Gemma 4), price and weather answers without AI                 | —                     |
+| Crop photo check (**experimental**, consent-gated), last 3 checks saved  | Gemini vision                                                              | Saved checks          |
+| Govt schemes and helplines page, plus the state agriculture portal       | Built in                                                                   | Yes                   |
+| Fertilizer (DAP, SSP, NPK complexes), cost/profit and unit calculators   | Built in                                                                   | Yes                   |
+| Share answers, photo checks and the app (WhatsApp, any app)              | Web Share API, `wa.me` link, clipboard                                     | —                     |
 
 Everything a farmer saves (language, location, crops, chats, photo checks) stays in the phone's local storage. There are no accounts. GPS is rounded to about 1 km before it is saved or sent.
 
@@ -35,22 +38,30 @@ Everything a farmer saves (language, location, crops, chats, photo checks) stays
 
 ### API
 
-| Route                                      | What                                                                                                            | Limit (per IP per minute) |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| `GET /api/health`                          | Keys configured, version, and the last upstream probe; **503** when both price sources are down                 | –                         |
-| `GET /api/weather?lat&lon`                 | MET forecast on a 0.05° grid; India only                                                                        | 60 (`DATA_LIMITER`)       |
-| `GET /api/districts?state`                 | District list (Agmarknet names)                                                                                 | 60 (`DATA_LIMITER`)       |
-| `GET /api/prices?commodity&state&district` | Latest price per mandi, grouped by product form, with MSP                                                       | 60 (`PRICES_LIMITER`)     |
-| `POST /api/chat`                           | Server-sent events: `text`, `tool`, `meta` (model, answer id), `cut`, `reset`, `error` (with `retryAt`), `done` | 20 (`CHAT_LIMITER`)       |
-| `POST /api/diagnose`                       | Photo check (JSON)                                                                                              | 30 (`PHOTO_LIMITER`)      |
-| `POST /api/feedback`                       | Thumbs up/down on an answer or photo check (to Analytics Engine)                                                | 60 (`DATA_LIMITER`)       |
+| Route                                           | What                                                                                                            | Limit (per IP per minute) |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `GET /api/health`                               | Keys configured, version, and the last upstream probe; **503** when both price sources are down                 | –                         |
+| `GET /api/weather?lat&lon`                      | MET forecast on a 0.05° grid; India only                                                                        | 60 (`DATA_LIMITER`)       |
+| `GET /api/districts?state`                      | District list (Agmarknet names)                                                                                 | 60 (`DATA_LIMITER`)       |
+| `GET /api/prices?commodity&state&district`      | Latest price per mandi, grouped by product form, with MSP                                                       | 60 (`PRICES_LIMITER`)     |
+| `POST /api/chat`                                | Server-sent events: `text`, `tool`, `meta` (model, answer id), `cut`, `reset`, `error` (with `retryAt`), `done` | 20 (`CHAT_LIMITER`)       |
+| `POST /api/diagnose`                            | Photo check (JSON)                                                                                              | 30 (`PHOTO_LIMITER`)      |
+| `POST /api/feedback`                            | Thumbs up/down on an answer or photo check (to Analytics Engine)                                                | 60 (`DATA_LIMITER`)       |
+| `GET /api/alerts?lang&state&district[&lat&lon]` | Active official warnings for the district (LGD code) or, with GPS, the mandal outline the farm is in            | 60 (`DATA_LIMITER`)       |
+| `GET /api/push/key`                             | Public VAPID key the app subscribes with                                                                        | –                         |
+| `POST /api/push/subscribe` / `unsubscribe`      | Turn the morning message on (endpoint, language, state, district, GPS on a 0.05° grid) or off (row deleted)     | 60 (`DATA_LIMITER`)       |
+| `POST /api/push/message`                        | What a woken phone shows: an official warning if there is one, else today's forecast and advice                 | 60 (`DATA_LIMITER`)       |
 
 POST routes accept only `application/json`, reject `Sec-Fetch-Site: cross-site`, and cap bodies at 64 KB (chat) / 4 MB (photo). Installed phones keep old app bundles, so wire changes must be additive (see [RELEASE.md](RELEASE.md)).
 
 ### Shared store, crons and metrics (all on the free plan)
 
-- **D1** (`DB`, schema in `migrations/`): a cache shared by every Worker isolate (Agmarknet filters and rows), which Gemini models are out of quota today and whether data.gov.in is down (so a fresh isolate doesn't re-probe), **daily AI budgets** (`DAILY_LIMITS` in `wrangler.jsonc`: per phone, per IP and for photo checks in total; price buttons and cached answers are free), an **answer cache** (the same first question from a farmer with the same profile in the same quarter of the day is answered without the AI; never for live prices or weather), daily **price snapshots** and the **health status**.
-- **Cron triggers:** 8 PM IST saves every reported mandi price for 32 crops in AP, Telangana, Karnataka, Tamil Nadu and Kerala (one Agmarknet request per state and day). The price tool then adds a **7-day trend** and falls back to the saved snapshot, clearly dated, when Agmarknet and data.gov.in are both down. Every 30 minutes a probe checks Agmarknet, data.gov.in and MET Norway for `/api/health`, and makes every isolate skip a dead data.gov.in.
+- **D1** (`DB`, schema in `migrations/`): a cache shared by every Worker isolate (Agmarknet filters and rows), which Gemini models are out of quota today and whether data.gov.in is down (so a fresh isolate doesn't re-probe), **daily AI budgets** (`DAILY_LIMITS` in `wrangler.jsonc`: per phone, per IP and for photo checks in total; price buttons and cached answers are free), an **answer cache** (the same first question from a farmer with the same profile in the same quarter of the day is answered without the AI; never for live prices or weather), daily **price snapshots**, the **health status** and **push subscriptions** (`push_subs`: only the push endpoint, language, state, district, LGD code and a 0.05° cell; deleted when alerts are turned off or the push service says the phone is gone).
+- **Cron triggers:** 8 PM IST saves every reported mandi price for 32 crops in AP, Telangana, Karnataka, Tamil Nadu and Kerala (one Agmarknet request per state and day). The price tool then adds a **7-day trend** and falls back to the saved snapshot, clearly dated, when Agmarknet and data.gov.in are both down. Every 30 minutes a probe checks Agmarknet, data.gov.in, MET Norway and SACHET for `/api/health`, makes every isolate skip a dead data.gov.in, and pushes new Severe/Extreme district warnings (each once, at most one per phone every 3 hours). Every minute from 05:30 to 07:29 IST the morning cron wakes the next 40 phones (≈4,800 a morning; sign-ups stop at 4,000).
+- **Web Push without a payload** (`worker/push.ts`, `public/push-sw.js`): the cron only signs one VAPID token per push service and wakes the phones; the service worker then asks `/api/push/message` what to show. Nothing is encrypted per phone, so a run stays inside the free plan's 10 ms CPU, and the message is current when shown. If the phone can't reach us, it shows "tap to see today's weather" in the farmer's language (saved when alerts were turned on). Chrome on Android needs no install; iPhones need BhooPal on the Home Screen (iOS 16.4+).
+- **Official warnings** (`worker/sachet.ts`): the NDMA SACHET RSS feed, filtered to South-Indian IMD offices and SDMAs; each warning's CAP file is fetched once (a few at a time, ≤ 8 per refresh) and kept in D1. IMD's district warnings carry LGD district codes, matched against `shared/districtData.ts`. Mandal-level SDMA warnings (lightning, swell) need their outline, which SACHET often refuses (403); then they are only shown when an outline was fetched and the farmer shared GPS.
+- **Backup AI** (`worker/backupAi.ts`): when every Gemini model is resting, price questions get the instant price answer, weather questions a forecast-and-advice answer (`worker/forecastText.ts`, no AI), and anything else Workers AI `@cf/google/gemma-4-26b-a4b-it` with thinking off (~7 s, ~10–40 neurons; at most 220 answers a day of the free 10,000 neurons). It gets the looked-up data but no tools, must not name medicines or doses, and the app marks its answers "backup AI". Diagnose stays Gemini-only.
+- **Weather words and advice rules** live in `shared/advice.ts` and `shared/weatherText/` (one file per language), used by both the app and the Worker.
 - **Workers Cache** serves repeated `GET /api/weather`, `/api/districts` and `/api/prices` from Cloudflare's cache for their `max-age`.
 - **Analytics Engine** (`STATS`, dataset `bhoopal_events`): one point per answer, photo check and thumbs up/down (model, finish reason, language, state, outcome; never the farmer's text). Query it with the SQL API. Logs are structured JSON with the deployed version id.
 - **Monitoring:** point a free uptime monitor (e.g. UptimeRobot, 5-minute checks) at `/api/health` (it returns 503 when prices are down) and `/api/weather?lat=17.39&lon=78.49`. Never at `/api/chat` or `/api/diagnose`, which cost AI quota.
@@ -70,7 +81,7 @@ POST routes accept only `application/json`, reject `Sec-Fetch-Site: cross-site`,
    npm run golden             # real AI questions in 6 languages against `npm run dev` (costs quota)
    npm run types              # regenerate worker-configuration.d.ts after editing wrangler.jsonc
    ```
-   With `npm run dev` running, trigger the crons at `/cdn-cgi/handler/scheduled?cron=30+14+*+*+*` (price snapshot) and `?cron=*/30+*+*+*+*` (health probe).
+   With `npm run dev` running, trigger the crons at `/cdn-cgi/handler/scheduled?cron=30+14+*+*+*` (price snapshot), `?cron=*/30+*+*+*+*` (health probe and warning pushes) and `?cron=*+0-1+*+*+*` (morning message). Push needs the service worker, so test it with `npm run preview`.
 
 ## Deploy (Cloudflare Workers free plan)
 
@@ -81,6 +92,8 @@ npx wrangler login
 npx wrangler d1 create bhoopal && npx wrangler d1 create bhoopal-staging   # then put the ids in wrangler.jsonc
 npx wrangler secret put GEMINI_API_KEY        # and again with --env staging
 npx wrangler secret put DATA_GOV_API_KEY      # and again with --env staging
+npm run -s vapid | npx wrangler secret put VAPID_PRIVATE_JWK                  # Web Push key; never change it later
+npm run -s vapid | npx wrangler secret put VAPID_PRIVATE_JWK --env staging    # (a new key unsubscribes every phone)
 npm run db:migrate:staging && npm run db:migrate
 npm run deploy:staging    # bhoopal-staging.<account>.workers.dev + smoke test
 npm run deploy            # production + smoke test

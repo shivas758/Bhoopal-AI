@@ -57,6 +57,8 @@ export default defineConfig({
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
+        // Morning weather and official-warning notifications (public/push-sw.js).
+        importScripts: ['push-sw.js'],
       },
     }),
   ],

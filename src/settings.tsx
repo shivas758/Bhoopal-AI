@@ -16,9 +16,11 @@ export interface Settings {
   crops: string[]
   autoSpeak: boolean
   photoConsent: boolean
+  /** Morning weather message and official warnings by push notification. */
+  alerts: boolean
 }
 
-const DEFAULTS: Settings = { lang: null, onboarded: false, crops: [], autoSpeak: false, photoConsent: false }
+const DEFAULTS: Settings = { lang: null, onboarded: false, crops: [], autoSpeak: false, photoConsent: false, alerts: false }
 
 const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.length < 60).slice(0, 30) : undefined)
 
@@ -43,6 +45,7 @@ export function load(): Settings {
     crops: strings(saved.crops) ?? strings(saved.favCrops) ?? DEFAULTS.crops,
     autoSpeak: saved.autoSpeak === true,
     photoConsent: saved.photoConsent === true,
+    alerts: saved.alerts === true,
   }
 }
 
