@@ -19,7 +19,8 @@
   // keeps worker-configuration.d.ts the same on every machine, so CI can check it.
   //   GEMINI_API_KEY     - free key from https://aistudio.google.com/apikey
   //   DATA_GOV_API_KEY   - free key from https://www.data.gov.in (My Account > API key)
-  "secrets": { "required": ["GEMINI_API_KEY", "DATA_GOV_API_KEY"] },
+  //   VAPID_PRIVATE_JWK  - Web Push signing key: `npm run vapid` prints a new one (JSON); pipe it to the command
+  "secrets": { "required": ["GEMINI_API_KEY", "DATA_GOV_API_KEY", "VAPID_PRIVATE_JWK"] },
   "vars": {
     // Gemini models, best first. The free tier allows ~20 requests/day PER MODEL, so the Worker
     // rotates through all of them. Most questions use 1 request (the Worker looks prices, weather and
@@ -31,6 +32,8 @@
     "GEMINI_THINKING_LEVEL": "low",
     // Sent to MET Norway and Agmarknet so they can identify us. MET Norway requires contact info (site URL or email).
     "USER_AGENT": "BhooPal/0.1 (+https://bhoopal.shivasahith.workers.dev)",
+    // Contact the push services (FCM, Apple, Mozilla) can reach us at, in every Web Push request.
+    "PUSH_CONTACT": "https://bhoopal.shivasahith.workers.dev",
     // AI questions per day (resets at midnight Pacific, with Gemini's quota). Price buttons and cached
     // answers don't count. A "device" is one phone (random id in its storage); many farmers can share an IP.
     "DAILY_LIMITS": { "chatPerDevice": 25, "chatPerIp": 40, "photosPerDevice": 5, "photosPerIp": 10, "photosTotal": 25 },
@@ -53,11 +56,15 @@
   "analytics_engine_datasets": [{ "binding": "STATS", "dataset": "bhoopal_events" }],
   // The deployed version id, logged with every answer so a bug report can be matched to a release.
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
+  // Workers AI: a backup chat model for when every Gemini model is resting. Free: 10,000 neurons/day
+  // (about 250 backup answers; the Worker stops at BACKUP_AI_DAILY, see worker/backupAi.ts).
+  "ai": { "binding": "AI" },
   "triggers": {
     // 14:30 UTC = 8 PM IST: snapshot today's (and late-reported yesterday's) mandi prices for the South
-    // Indian states. Every 30 min: probe Agmarknet, data.gov.in and MET Norway for /api/health.
-    // The free plan allows 5 cron triggers per account.
-    "crons": ["30 14 * * *", "*/30 * * * *"],
+    // Indian states. Every 30 min: probe Agmarknet, data.gov.in, MET Norway and SACHET for /api/health, and
+    // push new serious official warnings. Every minute 00:00-01:59 UTC (05:30-07:29 IST): the morning
+    // weather message, 40 phones per run. The free plan allows 5 cron triggers per account.
+    "crons": ["30 14 * * *", "*/30 * * * *", "* 0-1 * * *"],
   },
 
   "env": {
@@ -65,11 +72,12 @@
     // Build and deploy with `npm run deploy:staging`. Bindings and vars are not inherited, so they're repeated
     // here; secrets are set separately with `--env staging`. It shares the Gemini key, and so its quota.
     "staging": {
-      "secrets": { "required": ["GEMINI_API_KEY", "DATA_GOV_API_KEY"] },
+      "secrets": { "required": ["GEMINI_API_KEY", "DATA_GOV_API_KEY", "VAPID_PRIVATE_JWK"] },
       "vars": {
         "GEMINI_MODELS": "gemini-3.6-flash,gemini-3.7-flash,gemini-3.5-flash,gemini-2.5-flash,gemini-3.5-flash-lite",
         "GEMINI_THINKING_LEVEL": "low",
         "USER_AGENT": "BhooPal/0.1 (+https://bhoopal.shivasahith.workers.dev)",
+        "PUSH_CONTACT": "https://bhoopal.shivasahith.workers.dev",
         "DAILY_LIMITS": { "chatPerDevice": 25, "chatPerIp": 40, "photosPerDevice": 5, "photosPerIp": 10, "photosTotal": 25 },
       },
       "ratelimits": [
@@ -81,6 +89,7 @@
       "d1_databases": [{ "binding": "DB", "database_name": "bhoopal-staging", "database_id": "9e7deb2a-3ec9-4960-880e-7fe1fe9e0357" }],
       "analytics_engine_datasets": [{ "binding": "STATS", "dataset": "bhoopal_staging_events" }],
       "version_metadata": { "binding": "CF_VERSION_METADATA" },
+      "ai": { "binding": "AI" },
       // No crons on staging: they'd use 2 of the account's 5 and double the upstream probes.
       "triggers": { "crons": [] },
     },

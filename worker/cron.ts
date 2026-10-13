@@ -3,6 +3,8 @@ import { agmarknetIdsFor, agmarknetProbe, agmarknetStateDay } from './agmarknet'
 import { dataGovProbe, restDataGov } from './prices'
 import { cleanUp, saveSnapshot, writeStatus, type ServiceStatus, type SnapshotRow } from './store'
 import { indiaNow } from './util'
+import { MORNING_CRON, sendMorning, sendWarnings } from './push'
+import { loadAlerts, storedAlerts } from './sachet'
 import { getForecast } from './weather'
 
 // The main audience's states. One Agmarknet request per state and day covers every crop below (~70 KB,
@@ -83,19 +85,25 @@ async function check(run: () => Promise<string>): Promise<ServiceStatus> {
 
 /** Checks the free upstream services and stores the result for /api/health (and uptime monitors). */
 export async function probeUpstreams(env: Env) {
-  const [agmarknet, datagov, met] = await Promise.all([
+  const [agmarknet, datagov, met, sachet] = await Promise.all([
     check(() => agmarknetProbe(env, findState('Telangana')!)),
     check(() => dataGovProbe(env)),
     // Hyderabad, through the normal cache: MET's Expires/If-Modified-Since rules apply.
     check(async () => `forecast updated ${(await getForecast(env, 17.4, 78.5)).updatedAt}`),
+    check(async () => `${(await loadAlerts(env)).alerts.length} active South-India warnings`),
   ])
   // A dead data.gov.in costs farmers a 6 s timeout per question: skip it everywhere until the next probe.
   if (!datagov.ok && env.DATA_GOV_API_KEY) await restDataGov(env, 30)
-  await writeStatus(env.DB, { agmarknet, datagov, met })
-  console.log({ event: 'probe', agmarknet: agmarknet.ok, datagov: datagov.ok, met: met.ok })
+  await writeStatus(env.DB, { agmarknet, datagov, met, sachet })
+  console.log({ event: 'probe', agmarknet: agmarknet.ok, datagov: datagov.ok, met: met.ok, sachet: sachet.ok })
 }
 
 export async function runCron(cron: string, env: Env) {
   if (cron === SNAPSHOT_CRON) await snapshotPrices(env)
-  else await probeUpstreams(env)
+  else if (cron === MORNING_CRON) await sendMorning(env)
+  else {
+    await probeUpstreams(env)
+    // The probe has just refreshed the warnings; push the serious new ones.
+    await sendWarnings(env, await storedAlerts(env))
+  }
 }

@@ -1,6 +1,8 @@
 import { findDistrict } from '../shared/districts'
+import { findState } from '../shared/states'
 import type { WeatherDay, WeatherHour, WeatherKind, WeatherResponse } from '../shared/types'
-import { BadRequest, UpstreamError, cached, json, upstreamFetch } from './util'
+import { farmerPlace, warningsForChat } from './sachet'
+import { BadRequest, UpstreamError, cached, inIndia, json, upstreamFetch } from './util'
 
 // MET Norway: free, no key, commercial use allowed with attribution (CC BY 4.0).
 // Terms: identify yourself in User-Agent, cache responses, max 4 decimals in coordinates.
@@ -94,8 +96,7 @@ function summarize(series: MetEntry[]): Omit<WeatherResponse, 'updatedAt'> {
   return { hours, days: dayList }
 }
 
-/** Inside India's bounding box (incl. Lakshadweep and the Andamans). Also rejects 0,0 from a missing parameter. */
-export const inIndia = (lat: number, lon: number) => Number.isFinite(lat) && Number.isFinite(lon) && lat >= 6 && lat <= 38 && lon >= 68 && lon <= 98
+export { inIndia }
 
 // 0.05° (~5 km) is plenty for a farm forecast, lets a whole area share one MET request, and stops a scan of
 // every 0.01° cell from hammering MET Norway with our User-Agent.
@@ -151,27 +152,42 @@ export async function handleWeather(url: URL, env: Env): Promise<Response> {
   return json(await getForecast(env, lat, lon), 200, { 'cache-control': 'public, max-age=900' })
 }
 
+export interface FarmerWhere {
+  coords?: { lat: number; lon: number }
+  stateName?: string
+  district?: string
+}
+
+/** Where to forecast: the farmer's GPS fix, else the centre of their district, else (hundreds of km off) the state capital. */
+export function farmLocation(farmer: FarmerWhere) {
+  const gps = farmer.coords && inIndia(farmer.coords.lat, farmer.coords.lon) ? farmer.coords : undefined
+  const district = findDistrict(farmer.stateName, farmer.district)
+  const state = findState(farmer.stateName)
+  const coords = gps ?? (district && { lat: district.lat, lon: district.lon }) ?? (state && { lat: state.lat, lon: state.lon })
+  if (!coords) return undefined
+  const source: 'gps' | 'district' | 'state' = gps ? 'gps' : district ? 'district' : 'state'
+  return { coords, gps, district, state, source }
+}
+
 /** "2026-10-12 06:00" in IST: hours past midnight belong to the next day, so the model needs the date too. */
 const timeIST = (ms: number) => new Date(ms + IST_MS).toISOString().slice(0, 16).replace('T', ' ')
 
 /** The chat model's `get_weather_forecast` tool: a compact forecast for the farmer's location. */
-export async function weatherTool(
-  env: Env,
-  farmer: { coords?: { lat: number; lon: number }; stateName?: string; district?: string; stateCoords?: { lat: number; lon: number } },
-): Promise<Record<string, unknown>> {
-  // The farmer's GPS fix, else the centre of their district, else (hundreds of km off) the state capital.
-  const gps = farmer.coords && inIndia(farmer.coords.lat, farmer.coords.lon) ? farmer.coords : undefined
-  const district = gps ? undefined : findDistrict(farmer.stateName, farmer.district)
-  const coords = gps ?? (district && { lat: district.lat, lon: district.lon }) ?? farmer.stateCoords
-  if (!coords) return { error: 'Location unknown. Ask which state/district the farmer is in, or to allow location in the Weather tab.' }
-  const w = await getForecast(env, coords.lat, coords.lon)
+export async function weatherTool(env: Env, farmer: FarmerWhere): Promise<Record<string, unknown>> {
+  const loc = farmLocation(farmer)
+  if (!loc) return { error: 'Location unknown. Ask which state/district the farmer is in, or to allow location in the Weather tab.' }
+  const [w, warnings] = await Promise.all([
+    getForecast(env, loc.coords.lat, loc.coords.lon),
+    warningsForChat(env, farmerPlace(farmer.stateName, farmer.district, loc.gps)),
+  ])
   const from = Date.now() - 3600_000
   return {
-    location: gps
-      ? "farmer's GPS location"
-      : district
-        ? `centre of ${district.name} district (approximate; for village-level weather the farmer can tap "Use my location" on the Weather page)`
-        : `${farmer.stateName} state capital (approximate, may be far from the farm; the farmer can set the district in Settings or tap "Use my location")`,
+    location:
+      loc.source === 'gps'
+        ? "farmer's GPS location"
+        : loc.source === 'district'
+          ? `centre of ${loc.district!.name} district (approximate; for village-level weather the farmer can tap "Use my location" on the Weather page)`
+          : `${farmer.stateName} state capital (approximate, may be far from the farm; the farmer can set the district in Settings or tap "Use my location")`,
     timezone: 'IST',
     now: timeIST(Date.now()),
     next24Hours: w.hours
@@ -180,5 +196,12 @@ export async function weatherTool(
       .map((h) => ({ time: timeIST(Date.parse(h.time)), tempC: h.temp, rainMm: h.rainMm, windKmh: h.windKmh, humidity: h.humidity, sky: h.kind })),
     next7Days: w.days.map((d) => ({ date: d.date, minC: d.tMin, maxC: d.tMax, rainMm: d.rainMm, maxWindKmh: d.windMaxKmh, humidity: d.humidity, sky: d.kind })),
     source: 'MET Norway',
+    ...(warnings
+      ? {
+          officialWarnings: warnings,
+          officialWarningsNote:
+            'Active official warnings for this place (IMD / State Disaster Management Authority via NDMA SACHET). Mention them first, in simple words, with the safety step.',
+        }
+      : {}),
   }
 }

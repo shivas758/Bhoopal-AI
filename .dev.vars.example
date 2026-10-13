@@ -3,3 +3,6 @@
 GEMINI_API_KEY=
 # Optional, free from https://www.data.gov.in (My Account > Generate API key). Prices fall back to Agmarknet 2.0 without it.
 DATA_GOV_API_KEY=
+# Web Push signing key for the morning weather message (one line of JSON). Add one with:
+#   echo "VAPID_PRIVATE_JWK=$(npm run -s vapid)" >> .dev.vars
+VAPID_PRIVATE_JWK=

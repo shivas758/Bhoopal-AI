@@ -1,6 +1,6 @@
 // Post-deploy smoke test: `node scripts/smoke.mjs <base-url>` (run by `npm run deploy` and `deploy:staging`).
-// Uses no AI quota: health, the app shell, weather (twice, to see Workers Cache), districts, prices and the
-// POST guards. Exits non-zero if anything is wrong, so a broken deploy is noticed at once.
+// Uses no AI quota: health, the app shell, weather (twice, to see Workers Cache), districts, prices, official
+// warnings, the push key and the POST guards. Exits non-zero if anything is wrong, so a broken deploy is noticed at once.
 const base = (process.argv[2] ?? 'http://localhost:5173').replace(/\/$/, '')
 // `npm run dev` serves the page through Vite (no _headers) and its proxy can't forward Node's sec-fetch
 // headers, so those two checks only mean something on a deployed Worker.
@@ -41,6 +41,14 @@ for (const round of ['weather', 'weather again']) {
 }
 await check('districts', '/api/districts?state=Telangana', {}, (r, b) => (r.ok && Array.isArray(b.districts)) || 'no district list')
 await check('prices', '/api/prices?commodity=Paddy&state=Telangana', {}, (r, b) => (r.ok && ('forms' in b || 'error' in b)) || 'bad price result')
+await check('official warnings', '/api/alerts?lang=te&state=Telangana&district=Warangal', {}, (r, b) => (r.ok && Array.isArray(b.alerts)) || 'no alert list')
+await check('push key', '/api/push/key', {}, (r, b) => (r.ok && typeof b.key === 'string' && b.key.length > 80) || 'no VAPID key (secret VAPID_PRIVATE_JWK?)')
+await check(
+  'push rejects other servers',
+  '/api/push/subscribe',
+  { method: 'POST', headers: json, body: JSON.stringify({ endpoint: 'https://example.com/x', lang: 'te', state: 'Telangana' }) },
+  (r) => r.status === 400 || 'expected 400',
+)
 await check(
   'feedback',
   '/api/feedback',

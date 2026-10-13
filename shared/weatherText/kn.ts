@@ -1,0 +1,35 @@
+import type { WeatherText } from './en'
+
+export const weatherKn: WeatherText = {
+  'weather.today': 'ಇಂದು',
+  'weather.tomorrow': 'ನಾಳೆ',
+  'weather.kind.clear': 'ಶುಭ್ರ ಆಕಾಶ',
+  'weather.kind.partly': 'ಭಾಗಶಃ ಮೋಡ',
+  'weather.kind.cloudy': 'ಮೋಡ ಕವಿದ',
+  'weather.kind.fog': 'ಮಂಜು',
+  'weather.kind.lightrain': 'ಹಗುರ ಮಳೆ',
+  'weather.kind.rain': 'ಮಳೆ',
+  'weather.kind.heavyrain': 'ಭಾರಿ ಮಳೆ',
+  'weather.kind.thunder': 'ಗುಡುಗು ಸಹಿತ ಮಳೆ',
+  'weather.kind.snow': 'ಹಿಮ',
+  'advice.sprayGood': 'ಸಿಂಪಡಿಸಬೇಕಾದರೆ ಉತ್ತಮ ಸಮಯ: {window}.',
+  'advice.sprayRain': 'ಈಗ ಸಿಂಪಡಿಸಬೇಡಿ: ಮುಂದಿನ ಕೆಲವು ಗಂಟೆಗಳಲ್ಲಿ ಮಳೆ ಔಷಧಿಯನ್ನು ತೊಳೆದುಹಾಕುತ್ತದೆ.',
+  'advice.sprayWind': 'ಸಿಂಪಡಣೆಗೆ ಗಾಳಿ ತುಂಬಾ ಜೋರಾಗಿದೆ ({wind} ಕಿ.ಮೀ/ಗಂ). ಔಷಧಿ ಹಾರಿ ವ್ಯರ್ಥವಾಗುತ್ತದೆ.',
+  'advice.noSprayWindow': 'ಮುಂದಿನ 24 ಗಂಟೆಗಳಲ್ಲಿ ಸಿಂಪಡಣೆಗೆ ಒಳ್ಳೆಯ ಸಮಯವಿಲ್ಲ.',
+  'advice.heavyRain': '{day} ಭಾರಿ ಮಳೆಯ ಸಾಧ್ಯತೆ. ಹೊಲದ ಕಾಲುವೆಗಳನ್ನು ಸ್ವಚ್ಛಗೊಳಿಸಿ, ಗೊಬ್ಬರ ಹಾಕುವುದನ್ನು ಮುಂದೂಡಿ.',
+  'advice.heatSafety':
+    'ಮುಂದಿನ ದಿನಗಳು ತುಂಬಾ ಬಿಸಿಯಾಗಿರುತ್ತವೆ! ಮಧ್ಯಾಹ್ನ 12 ರಿಂದ 3 ರವರೆಗೆ ಹೊಲದ ಕೆಲಸ ಮಾಡಬೇಡಿ, ಆಗಾಗ ನೀರು ಕುಡಿಯಿರಿ, ನೆರಳಿನಲ್ಲಿ ವಿಶ್ರಾಂತಿ ಪಡೆಯಿರಿ. ತಲೆ ಸುತ್ತು, ಗೊಂದಲ ಅಥವಾ ಬೆವರು ಬಾರದಿದ್ದರೆ ತಕ್ಷಣ 108 ಗೆ ಕರೆ ಮಾಡಿ.',
+  'advice.rainSoon': '{day} ಮಳೆಯ ಸಾಧ್ಯತೆ. ನೀರಾವರಿ ಮತ್ತು ಮೇಲುಗೊಬ್ಬರ ನಿಲ್ಲಿಸಬಹುದು.',
+  'advice.heat': 'ಮುಂದಿನ ದಿನಗಳು ಬಿಸಿಯಾಗಿರುತ್ತವೆ (ಗರಿಷ್ಠ {temp}°C). ಬೆಳಿಗ್ಗೆ ಅಥವಾ ಸಂಜೆ ನೀರು ಹಾಯಿಸಿ, ತೇವ ಉಳಿಸಲು ಹೊದಿಕೆ ಹಾಕಿ.',
+  'advice.dryWeek': 'ಈ ವಾರ ಮಳೆ ನಿರೀಕ್ಷೆಯಿಲ್ಲ. ನೀರಾವರಿ ಯೋಜಿಸಿ.',
+  'advice.humid': 'ತೇವದ ವಾತಾವರಣದಲ್ಲಿ ಶಿಲೀಂಧ್ರ ರೋಗದ ಅಪಾಯ ಹೆಚ್ಚು. ಎಲೆಗಳ ಮೇಲೆ ಚುಕ್ಕೆಗಳನ್ನು ಗಮನಿಸಿ.',
+  'advice.thunder': '{day} ಗುಡುಗು-ಸಿಡಿಲಿನ ಸಾಧ್ಯತೆ. ಮಿಂಚಿನ ಸಮಯದಲ್ಲಿ ತೆರೆದ ಹೊಲ ಮತ್ತು ಎತ್ತರದ ಮರಗಳಿಂದ ದೂರವಿರಿ.',
+  'advice.strongWind':
+    '{day} ಬಲವಾದ ಗಾಳಿ ಬೀಸುವ ಸಾಧ್ಯತೆ (ಗಂಟೆಗೆ {wind} ಕಿ.ಮೀ ವರೆಗೆ). ಸಿಂಪಡಿಸಬೇಡಿ; ಬಾಳೆ, ಕಬ್ಬಿನಂತಹ ಎತ್ತರದ ಬೆಳೆಗಳಿಗೆ ಆಸರೆ ಕೊಡಿ, ಸಡಿಲವಾದ ಛಾವಣಿಗಳನ್ನು ಕಟ್ಟಿ.',
+  'forecast.place': '{place} ಹವಾಮಾನ',
+  'forecast.placeApprox': '{place} ಹವಾಮಾನ (ಅಂದಾಜು)',
+  'forecast.day': '{day}: {sky}, {min}–{max}°C, ಮಳೆ {rain} ಮಿ.ಮೀ.',
+  'forecast.more': 'ಗಂಟೆಗಂಟೆಯ ಮುನ್ಸೂಚನೆಗೆ ಹವಾಮಾನ ಟ್ಯಾಬ್ ತೆರೆಯಿರಿ.',
+  'alerts.official': 'ಸರ್ಕಾರಿ ಎಚ್ಚರಿಕೆ ({office})',
+  'push.title': '{place}: {min}–{max}°C, {sky}',
+}

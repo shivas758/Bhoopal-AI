@@ -60,6 +60,34 @@ export interface WeatherResponse {
   days: WeatherDay[]
 }
 
+export type AlertSeverity = 'Extreme' | 'Severe' | 'Moderate' | 'Minor' | 'Unknown'
+
+/** An official warning (IMD or a State Disaster Management Authority) from NDMA's SACHET feed. */
+export interface OfficialAlert {
+  id: string
+  /** Who issued it, e.g. "IMD Chennai", "Andhra Pradesh SDMA". */
+  office: string
+  /** e.g. "Moderate Rain", "Lightning", "Heat Wave". */
+  event: string
+  severity: AlertSeverity
+  urgency: string
+  certainty: string
+  /** ISO times. */
+  onset?: string
+  expires: string
+  /** The warning text, in the farmer's language when the issuer provided it, else English. */
+  headline: string
+  headlineLang: Lang
+  /** The issuer's area description, e.g. "Tirunelveli, Tenkasi districts of Tamil Nadu". */
+  area: string
+}
+
+export interface AlertsResponse {
+  alerts: OfficialAlert[]
+  /** ISO time the feed was last read. */
+  checkedAt: string
+}
+
 /** Messages of history the Worker uses (and the app sends). */
 export const MAX_HISTORY = 12
 /** Longest single chat message, in characters. */

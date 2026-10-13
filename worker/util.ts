@@ -94,6 +94,9 @@ export function cached<T>(key: string, ttl: number | ((value: T) => number), loa
   return value
 }
 
+/** Inside India's bounding box (incl. Lakshadweep and the Andamans). Also rejects 0,0 from a missing parameter. */
+export const inIndia = (lat: number, lon: number) => Number.isFinite(lat) && Number.isFinite(lon) && lat >= 6 && lat <= 38 && lon >= 68 && lon <= 98
+
 /** Today's date in India, independent of where the Worker runs. Read it with getUTC*() methods. */
 export function indiaNow() {
   return new Date(Date.now() + 5.5 * 3600 * 1000)

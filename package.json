@@ -25,7 +25,8 @@
     "db:migrate:local": "wrangler d1 migrations apply bhoopal --local --config wrangler.jsonc",
     "db:migrate:staging": "wrangler d1 migrations apply bhoopal-staging --remote --env staging --config wrangler.jsonc",
     "db:migrate": "wrangler d1 migrations apply bhoopal --remote --config wrangler.jsonc",
-    "golden": "vitest run --config vitest.golden.config.ts"
+    "golden": "vitest run --config vitest.golden.config.ts",
+    "vapid": "node scripts/vapid.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.54.0",

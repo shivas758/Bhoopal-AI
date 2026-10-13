@@ -4,6 +4,8 @@ import { runCron } from './cron'
 import { handleDiagnose } from './diagnose'
 import { record } from './metrics'
 import { handleDistricts, handlePrices } from './prices'
+import { handlePushKey, handlePushMessage, handleSubscribe, handleUnsubscribe } from './push'
+import { handleAlerts } from './sachet'
 import { readStatus } from './store'
 import { BadRequest, UpstreamError, apiError, json } from './util'
 import { handleWeather } from './weather'
@@ -15,7 +17,14 @@ async function allowed(limiter: RateLimit, request: Request) {
   return success
 }
 
-const MAX_BODY_BYTES: Record<string, number> = { '/api/chat': 64 * 1024, '/api/diagnose': 4 * 1024 * 1024, '/api/feedback': 2 * 1024 }
+const MAX_BODY_BYTES: Record<string, number> = {
+  '/api/chat': 64 * 1024,
+  '/api/diagnose': 4 * 1024 * 1024,
+  '/api/feedback': 2 * 1024,
+  '/api/push/subscribe': 4 * 1024,
+  '/api/push/unsubscribe': 4 * 1024,
+  '/api/push/message': 4 * 1024,
+}
 
 /**
  * The app only ever POSTs JSON from its own pages. Rejecting other content types and cross-site requests stops
@@ -74,6 +83,9 @@ export default {
         case 'GET /api/weather':
           if (!(await allowed(env.DATA_LIMITER, request))) return apiError('rate_limited', 429)
           return await handleWeather(url, env)
+        case 'GET /api/alerts':
+          if (!(await allowed(env.DATA_LIMITER, request))) return apiError('rate_limited', 429)
+          return await handleAlerts(url, env)
         case 'GET /api/prices':
           if (!(await allowed(env.PRICES_LIMITER, request))) return apiError('rate_limited', 429)
           return await handlePrices(url, env)
@@ -83,6 +95,17 @@ export default {
         case 'POST /api/diagnose':
           if (!(await allowed(env.PHOTO_LIMITER, request))) return apiError('rate_limited', 429)
           return rejectPost(request, url.pathname) ?? (await handleDiagnose(request, env))
+        case 'GET /api/push/key':
+          return handlePushKey(env)
+        case 'POST /api/push/subscribe':
+          if (!(await allowed(env.DATA_LIMITER, request))) return apiError('rate_limited', 429)
+          return rejectPost(request, url.pathname) ?? (await handleSubscribe(request, env))
+        case 'POST /api/push/unsubscribe':
+          if (!(await allowed(env.DATA_LIMITER, request))) return apiError('rate_limited', 429)
+          return rejectPost(request, url.pathname) ?? (await handleUnsubscribe(request, env))
+        case 'POST /api/push/message':
+          if (!(await allowed(env.DATA_LIMITER, request))) return apiError('rate_limited', 429)
+          return rejectPost(request, url.pathname) ?? (await handlePushMessage(request, env))
         case 'POST /api/feedback':
           if (!(await allowed(env.DATA_LIMITER, request))) return apiError('rate_limited', 429)
           return rejectPost(request, url.pathname) ?? (await handleFeedback(request, env))

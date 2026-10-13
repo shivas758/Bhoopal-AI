@@ -1,16 +1,17 @@
-import type { Lang, WeatherHour, WeatherResponse } from '../../shared/types'
-import type { MessageKey, TranslateVars } from '../i18n'
-import { formatTime, todayInIndia } from './format'
+import { formatTime, todayInIndia } from './time'
+import type { Lang, WeatherHour, WeatherResponse } from './types'
+import type { TextVars, WeatherTextKey } from './weatherText'
 
+// Shared by the app (Home, Weather) and the Worker (morning alerts, weather answers when the AI is resting).
 export interface Advice {
   tone: 'good' | 'warn' | 'info'
-  key: MessageKey
-  vars?: TranslateVars
+  key: WeatherTextKey
+  vars?: TextVars
   /** About people's safety or a big weather event: shown first, and on the Home card instead of spray advice. */
   urgent?: boolean
 }
 
-type T = (key: MessageKey, vars?: TranslateVars) => string
+type T = (key: WeatherTextKey, vars?: TextVars) => string
 
 const RAINY = new Set(['lightrain', 'rain', 'heavyrain', 'thunder'])
 const isWet = (h: WeatherHour) => h.rainMm >= 0.2 || RAINY.has(h.kind)
@@ -22,7 +23,7 @@ const STRONG_WIND_KMH = 40
 export function dayLabel(date: string, lang: Lang, bcp47: string, t: T) {
   const today = todayInIndia()
   const tomorrow = todayInIndia(1)
-  const weekday = new Date(`${date}T12:00:00`).toLocaleDateString(bcp47, { weekday: 'long' })
+  const weekday = new Date(`${date}T12:00:00Z`).toLocaleDateString(bcp47, { weekday: 'long', timeZone: 'UTC' })
   if (lang === 'en') return date === today ? 'today' : date === tomorrow ? 'tomorrow' : `on ${weekday}`
   if (date === today) return t('weather.today')
   if (date === tomorrow) return t('weather.tomorrow')

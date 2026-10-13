@@ -14,7 +14,9 @@ import {
   type PriceResult,
 } from '../shared/types'
 import { fold } from '../shared/text'
+import { BACKUP_MODEL, spendBackupBudget, streamBackupAnswer } from './backupAi'
 import { spendDailyBudget } from './budget'
+import { weatherAnswer } from './forecastText'
 import { callGemini, pauseModel, readGeminiStream, toolHistoryAsText, toolResultText, type GeminiChunk, type GeminiContent, type GeminiPart } from './gemini'
 import { record, type MetricEvent } from './metrics'
 import { readAnswer, writeAnswer } from './store'
@@ -22,6 +24,7 @@ import { detectIntents } from './intents'
 import { createOutputFilter } from './outputFilter'
 import { priceAnswer } from './priceAnswer'
 import { mandiPricesTool } from './prices'
+import { alertsQuickly } from './sachet'
 import { chatSystemPrompt } from './prompts'
 import { BadRequest, UpstreamError, apiError, indiaNow } from './util'
 import { inIndia, weatherTool } from './weather'
@@ -179,12 +182,7 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
         case 'get_mandi_prices':
           return await mandiPricesTool(env, args, farmer)
         case 'get_weather_forecast':
-          return await weatherTool(env, {
-            coords: req.coords,
-            stateName: state?.id,
-            district: req.district,
-            stateCoords: state && { lat: state.lat, lon: state.lon },
-          })
+          return await weatherTool(env, { coords: req.coords, stateName: state?.id, district: req.district })
         case 'get_scheme_info':
           return schemeInfo(req.lang, state?.id)
         default:
@@ -209,9 +207,20 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
   const metric = (outcome: string, extra: Partial<MetricEvent> = {}) =>
     record(env, { kind: 'chat', outcome, id: qid, lang: req.lang, state: state?.id, ms: Date.now() - started, ...extra })
 
+  /** An answer that needs no AI: the instant price card, a weather summary or a cached answer. */
+  const answerNow = async (text: string, model: string, outcome: string, extra: Partial<MetricEvent> = {}) => {
+    await send({ type: 'meta', model, id: qid })
+    await send({ type: 'text', text })
+    await send({ type: 'done' })
+    metric(outcome, { model, ...extra })
+    return true
+  }
+
   const run = async () => {
     let calls = 0
     const toolsUsed = new Set<string>()
+    // Set once the data is looked up: how to answer if every Gemini model has used today's free quota.
+    let whenResting: (() => Promise<boolean>) | undefined
     try {
       // 1. Look up what the question obviously needs before the first AI call (saves a whole tool round).
       const intents = detectIntents(question)
@@ -225,19 +234,16 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
       if (prices) toolsUsed.add('get_mandi_prices')
       if (weather) toolsUsed.add('get_weather_forecast')
 
+      const priceText = () =>
+        prices && !('error' in prices)
+          ? priceAnswer(prices as PriceResult, req.lang, { today: indiaNow().toISOString().slice(0, 10), requestedDistrict: req.district })
+          : undefined
+
       // 2. A price button answered straight from Agmarknet: no AI call, works even when the AI is resting.
-      if (req.intent?.kind === 'price' && prices && !('error' in prices)) {
-        const text = priceAnswer(prices as PriceResult, req.lang, {
-          today: indiaNow().toISOString().slice(0, 10),
-          requestedDistrict: req.district,
-        })
-        if (text) {
-          await send({ type: 'meta', model: 'template', id: qid })
-          await send({ type: 'text', text })
-          await send({ type: 'done' })
-          metric('template', { model: 'template', tools: 'get_mandi_prices', detail: req.intent.commodity })
-          return
-        }
+      const instant = req.intent?.kind === 'price' ? priceText() : undefined
+      if (instant) {
+        await answerNow(instant, 'template', 'template', { tools: 'get_mandi_prices', detail: req.intent?.commodity })
+        return
       }
 
       // 3. The same first question from a farmer with the same profile, earlier today: replay that answer.
@@ -245,10 +251,7 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
       const answerKey = !noCache && req.messages.length === 1 && !priceCrop && !intents.weather ? await answerHash(req, state?.id, question) : undefined
       const saved = answerKey ? await readAnswer(env.DB, answerKey) : undefined
       if (saved) {
-        await send({ type: 'meta', model: `cache:${saved.model ?? ''}`, id: qid })
-        await send({ type: 'text', text: saved.text })
-        await send({ type: 'done' })
-        metric('cached', { model: saved.model ?? '' })
+        await answerNow(saved.text, `cache:${saved.model ?? ''}`, 'cached')
         return
       }
 
@@ -275,6 +278,43 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
       }))
       const schemes = intents.schemes ? schemeInfo(req.lang, state?.id) : undefined
       const systemInstruction = { parts: [{ text: chatSystemPrompt(req.lang, farmer, { historyCut: req.historyCut, schemes }) }] }
+
+      // Every Gemini model resting (free daily quota used up): prices and weather come straight from the data,
+      // anything else from the backup model, which is told it cannot look anything up.
+      whenResting = async () => {
+        const price = priceText()
+        if (price) return answerNow(price, 'template', 'resting_template', { tools: 'get_mandi_prices' })
+        if (intents.weather) {
+          const where = { coords: req.coords, stateName: state?.id, district: req.district }
+          const text = await weatherAnswer(env, req.lang, where, await alertsQuickly(env)).catch((err: unknown) => console.warn('weather answer failed', err))
+          if (text) return answerNow(text, 'template', 'resting_template', { tools: 'get_weather_forecast' })
+        }
+        if (!(await spendBackupBudget(env))) return false
+        const system = chatSystemPrompt(req.lang, farmer, { historyCut: req.historyCut, schemes, backup: true })
+        const data = lookedUp.map((p) => p.text).join('\n')
+        const withData = req.messages.map((m, i) => (i === req.messages.length - 1 && data ? { ...m, text: `${m.text}\n\n${data}` } : m))
+        try {
+          const answer = streamBackupAnswer(env, system, withData, request.signal)
+          let step = await answer.next()
+          if (!step.done) await send({ type: 'meta', model: BACKUP_MODEL, id: qid })
+          while (!step.done) {
+            await filter.push(step.value)
+            step = await answer.next()
+          }
+          await filter.flush()
+          if (!sentText.trim()) return false
+          if (step.value.cut) await send({ type: 'cut' })
+        } catch (err) {
+          // e.g. Workers AI's free neurons used up. Text already shown stays, marked as cut short.
+          console.warn(`chat ${qid}: backup model failed`, err)
+          await filter.flush()
+          if (!sentText.trim()) return false
+          await send({ type: 'cut' })
+        }
+        await send({ type: 'done' })
+        metric('backup', { model: BACKUP_MODEL, calls })
+        return true
+      }
       const generationConfig = { temperature: 0.5, maxOutputTokens: MAX_OUTPUT_TOKENS }
 
       let model: string | undefined
@@ -415,8 +455,9 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
         metric('aborted', { calls })
         return
       }
-      console.error(`chat ${qid} failed`, err)
       const busy = err instanceof UpstreamError && err.status === 429
+      if (busy && whenResting && !sentText && (await whenResting().catch(() => false))) return
+      console.error(`chat ${qid} failed`, err)
       const retryAt = busy && err.retryAt ? new Date(err.retryAt).toISOString() : undefined
       await send({ type: 'error', code: busy ? 'busy' : 'upstream', ...(retryAt ? { retryAt } : {}) }).catch(() => {})
       metric(busy ? 'busy' : 'upstream', { calls, detail: err instanceof Error ? err.message.slice(0, 120) : undefined })
