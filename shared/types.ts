@@ -117,6 +117,18 @@ export interface FeedbackRequest {
   lang: Lang
 }
 
+/** POST /api/auth/signup, /login and /reset. `phone` as typed; the Worker keeps its 10 digits. */
+export interface AuthRequest {
+  phone: string
+  password: string
+}
+
+/** A new session. The app sends the token as "Authorization: Bearer <token>"; the Worker keeps only its hash. */
+export interface AuthResponse {
+  token: string
+  phone: string
+}
+
 /** A question the app already understands, so the Worker can answer it without the AI. */
 export type ChatIntent = { kind: 'price'; commodity: string }
 
@@ -133,8 +145,23 @@ export interface ChatRequest {
   intent?: ChatIntent
 }
 
-/** 'daily_limit': this phone or network used its share of today's free AI questions. Old apps show it as generic. */
-export type ApiErrorCode = 'busy' | 'rate_limited' | 'daily_limit' | 'not_configured' | 'bad_request' | 'upstream' | 'blocked' | 'server_error'
+/**
+ * 'daily_limit': this phone or network used its share of today's free AI questions. Old apps show it as generic.
+ * 'unauthorized': not logged in, or the session ended (e.g. the password was reset); the others are log-in answers.
+ */
+export type ApiErrorCode =
+  | 'busy'
+  | 'rate_limited'
+  | 'daily_limit'
+  | 'not_configured'
+  | 'bad_request'
+  | 'upstream'
+  | 'blocked'
+  | 'server_error'
+  | 'unauthorized'
+  | 'no_account'
+  | 'account_exists'
+  | 'wrong_password'
 
 /** JSON body of every API error. `retryAt` (ISO time) tells the farmer when the free AI quota is back. */
 export interface ApiErrorBody {

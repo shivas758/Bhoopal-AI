@@ -11,6 +11,19 @@ export const json = (data: unknown, status = 200, headers: Record<string, string
 export const apiError = (code: ApiErrorCode, status: number, extra: Omit<ApiErrorBody, 'error'> = {}) =>
   json({ error: code, ...extra } satisfies ApiErrorBody, status)
 
+export const b64url = (bytes: Uint8Array) =>
+  btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+export const fromB64url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
+export const utf8 = (s: string) => new TextEncoder().encode(s)
+
+export async function sha256Hex(s: string) {
+  const digest = await crypto.subtle.digest('SHA-256', utf8(s))
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 /** Thrown when a free upstream service (data.gov.in, MET Norway, Gemini) fails. */
 export class UpstreamError extends Error {
   constructor(

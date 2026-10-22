@@ -3,7 +3,7 @@ import { findState } from '../shared/states'
 import { isLang, type Lang } from '../shared/types'
 import { morningMessage, type PushMessage } from './forecastText'
 import { alertsQuickly, type StoredAlert } from './sachet'
-import { BadRequest, apiError, inIndia, indiaNow, json } from './util'
+import { BadRequest, apiError, b64url, fromB64url, inIndia, indiaNow, json, sha256Hex, utf8 } from './util'
 
 // Web Push without a payload: the cron only wakes the phone, and the app's service worker then asks
 // POST /api/push/message what to show. Nothing has to be encrypted per phone, so a cron run (10 ms CPU on the
@@ -31,19 +31,6 @@ interface SubRow {
   lat: number | null
   lon: number | null
   alerts_sent: string
-}
-
-const b64url = (bytes: Uint8Array) =>
-  btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-const fromB64url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
-const utf8 = (s: string) => new TextEncoder().encode(s)
-
-async function sha256Hex(s: string) {
-  const digest = await crypto.subtle.digest('SHA-256', utf8(s))
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 /** The VAPID key pair (secret VAPID_PRIVATE_JWK, a P-256 private key as JWK). */

@@ -52,8 +52,11 @@
     { "name": "PRICES_LIMITER", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } },
     // Weather, district lists and feedback: cheap for us, but MET Norway bans abusive User-Agents.
     { "name": "DATA_LIMITER", "namespace_id": "1004", "simple": { "limit": 60, "period": 60 } },
+    // Sign-up, log-in and new password: stops password guessing and fake sign-ups, but lets a KVK meeting of
+    // 30 farmers behind one IP sign up together.
+    { "name": "AUTH_LIMITER", "namespace_id": "1005", "simple": { "limit": 30, "period": 60 } },
   ],
-  // Shared store: cache, model rest state, daily budgets, answer cache, price snapshots, health status.
+  // Shared store: cache, model rest state, daily budgets, answer cache, price snapshots, health status, accounts.
   // Schema in migrations/ (`npm run db:migrate`).
   "d1_databases": [{ "binding": "DB", "database_name": "bhoopal", "database_id": "367f90b5-3443-467b-870e-9c78577315aa" }],
   // One data point per answer, photo check and thumbs up/down: model, finish reason, language, state, error
@@ -91,6 +94,7 @@
         { "name": "PHOTO_LIMITER", "namespace_id": "2002", "simple": { "limit": 30, "period": 60 } },
         { "name": "PRICES_LIMITER", "namespace_id": "2003", "simple": { "limit": 60, "period": 60 } },
         { "name": "DATA_LIMITER", "namespace_id": "2004", "simple": { "limit": 60, "period": 60 } },
+        { "name": "AUTH_LIMITER", "namespace_id": "2005", "simple": { "limit": 30, "period": 60 } },
       ],
       "d1_databases": [{ "binding": "DB", "database_name": "bhoopal-staging", "database_id": "9e7deb2a-3ec9-4960-880e-7fe1fe9e0357" }],
       "analytics_engine_datasets": [{ "binding": "STATS", "dataset": "bhoopal_staging_events" }],

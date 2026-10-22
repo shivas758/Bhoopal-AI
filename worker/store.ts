@@ -185,6 +185,7 @@ export function cleanUp(db: Db, now = Date.now()): Promise<void> {
       db.prepare('DELETE FROM answers WHERE created < ?').bind(now - 2 * 86400_000),
       db.prepare('DELETE FROM budget WHERE day < ?').bind(day(now - 3 * 86400_000)),
       db.prepare('DELETE FROM prices WHERE date < ?').bind(day(now - 35 * 86400_000)),
+      db.prepare('DELETE FROM sessions WHERE expires < ?').bind(now),
     ])
   })
 }

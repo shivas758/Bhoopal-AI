@@ -1,6 +1,6 @@
 // Post-deploy smoke test: `node scripts/smoke.mjs <base-url>` (run by `npm run deploy` and `deploy:staging`).
-// Uses no AI quota: health, the app shell, weather (twice, to see Workers Cache), districts, prices, official
-// warnings, the push key and the POST guards. Exits non-zero if anything is wrong, so a broken deploy is noticed at once.
+// Uses no AI quota and creates no account: health, the app shell, weather (twice, to see Workers Cache), districts,
+// prices, official warnings, the push key, the log-in tables and the POST guards. Exits non-zero if anything is wrong, so a broken deploy is noticed at once.
 const base = (process.argv[2] ?? 'http://localhost:5173').replace(/\/$/, '')
 // `npm run dev` serves the page through Vite (no _headers) and its proxy can't forward Node's sec-fetch
 // headers, so those two checks only mean something on a deployed Worker.
@@ -55,8 +55,17 @@ await check(
   { method: 'POST', headers: json, body: JSON.stringify({ kind: 'chat', vote: 'up', lang: 'en', id: 'smoke' }) },
   (r) => r.status === 204 || 'expected 204',
 )
+// A made-up number: "no account" (or "wrong password", should someone own it) shows migration 0003 is applied.
+await check(
+  'log-in store',
+  '/api/auth/login',
+  { method: 'POST', headers: json, body: JSON.stringify({ phone: '6000000000', password: 'smoke-test-only' }) },
+  (r, b) => r.status === 404 || r.status === 401 || `expected 404 or 401, got ${JSON.stringify(b).slice(0, 200)} (npm run db:migrate?)`,
+)
 // Rejections last: the Worker answers them without reading the body, which can upset a reused local
 // dev-server connection for the next request.
+// No body: the 401 comes before the body is read, and an unread body would upset the next request locally.
+await check('chat needs log-in', '/api/chat', { method: 'POST', headers: json }, (r) => r.status === 401 || 'expected 401')
 await check(
   'chat rejects text/plain',
   '/api/chat',

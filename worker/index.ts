@@ -1,4 +1,5 @@
 import { isLang, type FeedbackRequest } from '../shared/types'
+import { handleLogin, handleLogout, handleReset, handleSignup, rejectLoggedOut } from './auth'
 import { handleChat } from './chat'
 import { runCron } from './cron'
 import { handleDiagnose } from './diagnose'
@@ -21,6 +22,10 @@ const MAX_BODY_BYTES: Record<string, number> = {
   '/api/chat': 64 * 1024,
   '/api/diagnose': 4 * 1024 * 1024,
   '/api/feedback': 2 * 1024,
+  '/api/auth/signup': 1024,
+  '/api/auth/login': 1024,
+  '/api/auth/reset': 1024,
+  '/api/auth/logout': 1024,
   '/api/push/subscribe': 4 * 1024,
   '/api/push/unsubscribe': 4 * 1024,
   '/api/push/message': 4 * 1024,
@@ -91,10 +96,21 @@ export default {
           return await handlePrices(url, env)
         case 'POST /api/chat':
           if (!(await allowed(env.CHAT_LIMITER, request))) return apiError('rate_limited', 429)
-          return rejectPost(request, url.pathname) ?? (await handleChat(request, env, ctx))
+          return rejectPost(request, url.pathname) ?? (await rejectLoggedOut(request, env)) ?? (await handleChat(request, env, ctx))
         case 'POST /api/diagnose':
           if (!(await allowed(env.PHOTO_LIMITER, request))) return apiError('rate_limited', 429)
-          return rejectPost(request, url.pathname) ?? (await handleDiagnose(request, env))
+          return rejectPost(request, url.pathname) ?? (await rejectLoggedOut(request, env)) ?? (await handleDiagnose(request, env))
+        case 'POST /api/auth/signup':
+          if (!(await allowed(env.AUTH_LIMITER, request))) return apiError('rate_limited', 429)
+          return rejectPost(request, url.pathname) ?? (await handleSignup(request, env))
+        case 'POST /api/auth/login':
+          if (!(await allowed(env.AUTH_LIMITER, request))) return apiError('rate_limited', 429)
+          return rejectPost(request, url.pathname) ?? (await handleLogin(request, env))
+        case 'POST /api/auth/reset':
+          if (!(await allowed(env.AUTH_LIMITER, request))) return apiError('rate_limited', 429)
+          return rejectPost(request, url.pathname) ?? (await handleReset(request, env))
+        case 'POST /api/auth/logout':
+          return rejectPost(request, url.pathname) ?? (await handleLogout(request, env))
         case 'GET /api/push/key':
           return handlePushKey(env)
         case 'POST /api/push/subscribe':
