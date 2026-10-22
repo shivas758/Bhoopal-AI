@@ -12,10 +12,8 @@ import { Markdown } from '../lib/markdown'
 import { go, takeAsk, useRoute, type Route } from '../lib/router'
 import { appUrl, forWhatsApp } from '../lib/share'
 import { answerLanguage, canListen, listen, speak, stopSpeaking, type ListenError } from '../lib/speech'
-import { readJson, writeJson } from '../lib/storage'
 import { useSettings, useT } from '../settings'
 
-const MAX_SAVED = 40
 // What the farmer sees while the Worker looks something up.
 const TOOL_STATUS: Record<string, MessageKey> = {
   get_mandi_prices: 'chat.checkingPrices',
@@ -34,22 +32,6 @@ const VOICE_SEND_DELAY = 3
 const DRAFT_KEY = 'bhoopal.chatDraft'
 
 type Status = 'idle' | 'thinking' | 'writing'
-
-/** Saved chat, keeping only well-formed, non-empty messages (an old empty bubble would spin forever). */
-function savedMessages(): ChatMessage[] {
-  const raw = readJson<unknown>('chat', [])
-  if (!Array.isArray(raw)) return []
-  return raw
-    .filter((m): m is ChatMessage => Boolean(m) && (m.role === 'user' || m.role === 'model') && typeof m.text === 'string' && m.text.trim() !== '')
-    .map((m) => ({
-      role: m.role,
-      text: m.text,
-      ...(typeof m.model === 'string' ? { model: m.model } : {}),
-      ...(m.cut === true ? { cut: true } : {}),
-      ...(typeof m.id === 'string' && m.id.length <= 16 ? { id: m.id } : {}),
-      ...(m.vote === 'up' || m.vote === 'down' ? { vote: m.vote } : {}),
-    }))
-}
 
 function savedDraft() {
   try {
@@ -145,7 +127,8 @@ export function Chat() {
   const online = useOnline()
   const { params } = useRoute()
 
-  const [messages, setMessages] = useState<ChatMessage[]>(savedMessages)
+  // Every visit to Ask starts a new conversation; nothing from earlier visits is kept or sent.
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState(savedDraft)
   const [status, setStatus] = useState<Status>('idle')
   const [toolName, setToolName] = useState<string | null>(null)
@@ -171,10 +154,6 @@ export function Chat() {
   const composerRef = useHeightVar<HTMLDivElement>('--composer-h')
   const handledParams = useRef(false)
 
-  // Save only finished exchanges: a half-written answer is saved by the unmount cleanup below instead.
-  useEffect(() => {
-    if (status === 'idle') writeJson('chat', messages.filter((m) => m.text).slice(-MAX_SAVED))
-  }, [messages, status])
   useEffect(() => {
     try {
       sessionStorage.setItem(DRAFT_KEY, input)
@@ -195,8 +174,6 @@ export function Chat() {
   }, [messages, status])
   useEffect(
     () => () => {
-      // Leaving the page mid-answer: keep the question and whatever was written so far.
-      if (busyRef.current) writeJson('chat', messagesRef.current.filter((m) => m.text).slice(-MAX_SAVED))
       abortRef.current?.abort()
       stopListeningRef.current?.()
       if (countdownRef.current) clearInterval(countdownRef.current)

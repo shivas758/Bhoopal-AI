@@ -3,9 +3,11 @@ import { BottomNav } from './components/BottomNav'
 import { UpdateToast } from './components/PwaPrompts'
 import { PushSync } from './components/PushToggle'
 import { OfflineBanner, Spinner } from './components/ui'
+import { useSession } from './lib/auth'
 import { useRoute, type Route } from './lib/router'
 import { Chat } from './pages/Chat'
 import { Home } from './pages/Home'
+import { Login } from './pages/Login'
 import { Onboarding } from './pages/Onboarding'
 import { Weather } from './pages/Weather'
 import { useSettings } from './settings'
@@ -48,9 +50,11 @@ function Main() {
 
 export function App() {
   const { settings } = useSettings()
+  const session = useSession()
   return (
     <>
-      {settings.onboarded ? <Main /> : <Onboarding />}
+      {/* Language first, so the log-in screen is in the farmer's language; then log in; then the farm questions. */}
+      {!settings.lang ? <Onboarding /> : !session ? <Login /> : settings.onboarded ? <Main /> : <Onboarding />}
       {/* Also registers the service worker, so it stays mounted from the very first (onboarding) screen:
           the app is cached for offline use from the farmer's first visit. */}
       <UpdateToast />

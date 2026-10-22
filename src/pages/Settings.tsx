@@ -1,13 +1,15 @@
+import { LogOut } from 'lucide-react'
 import { useState } from 'react'
+import { formatPhone } from '../../shared/account'
 import { LANG_INFO, LANGS } from '../../shared/types'
 import { districtLabel } from '../../shared/districts'
 import { STATES, findState } from '../../shared/states'
 import { CropPicker } from '../components/CropPicker'
 import { PushSetting } from '../components/PushToggle'
-import { Card, PageHeader, inputClass } from '../components/ui'
+import { Card, PageHeader, inputClass, secondaryButton } from '../components/ui'
 import { api } from '../lib/api'
+import { logOut, useSession } from '../lib/auth'
 import { useOfflineData } from '../lib/hooks'
-import { formatDateTime } from '../lib/format'
 import { disablePush } from '../lib/push'
 import { clearAll } from '../lib/storage'
 import { useSettings, useT } from '../settings'
@@ -15,6 +17,7 @@ import { useSettings, useT } from '../settings'
 export function Settings() {
   const { t, lang, bcp47 } = useT()
   const { settings, update } = useSettings()
+  const session = useSession()
   const [confirmClear, setConfirmClear] = useState(false)
   const [cleared, setCleared] = useState(false)
   const state = findState(settings.state)
@@ -22,13 +25,19 @@ export function Settings() {
 
   const clear = () => {
     if (!confirmClear) return setConfirmClear(true)
-    // Keep the phone's id: clearing data must not reset its daily share of the free AI.
-    clearAll(['settings', 'device'])
+    // Keep the phone's id: clearing data must not reset its daily share of the free AI. Stay logged in.
+    clearAll(['settings', 'device', 'session'])
     // Also deletes what the server kept for the morning message.
     if (settings.alerts) void disablePush().catch(() => {})
     update({ coords: undefined, alerts: false })
     setConfirmClear(false)
     setCleared(true)
+  }
+
+  const logOutHere = () => {
+    // Best effort: the session row is deleted at the latest when it expires.
+    void api.logout().catch(() => {})
+    logOut()
   }
 
   return (
@@ -111,14 +120,15 @@ export function Settings() {
           </label>
         </Card>
 
-        <Card className="space-y-2 text-sm">
-          <h2 className="text-base font-bold">{t('settings.about')}</h2>
-          <p>{t('settings.aboutBody')}</p>
-          <p>{t('settings.privacy')}</p>
-          <p className="text-sm text-stone-600">
-            BhooPal v{__APP_VERSION__} · {formatDateTime(Date.parse(__BUILD__), bcp47)}
-          </p>
-        </Card>
+        {session && (
+          <Card className="flex flex-col gap-3">
+            <h2 className="font-bold">{t('settings.account')}</h2>
+            <p>{t('settings.loggedInAs', { phone: formatPhone(session.phone) })}</p>
+            <button onClick={logOutHere} className={secondaryButton}>
+              <LogOut className="size-5" /> {t('settings.logout')}
+            </button>
+          </Card>
+        )}
 
         <button onClick={clear} className="rounded-xl border border-red-300 bg-white px-4 py-3 font-semibold text-red-700">
           {cleared ? t('settings.cleared') : confirmClear ? t('settings.clearConfirm') : t('settings.clearData')}

@@ -28,7 +28,8 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
     const lang = savedLang()
     const t = (key: Parameters<typeof translate>[1]) => translate(lang, key, { kcc: KCC_PHONE })
     const reset = () => {
-      clearAll()
+      // Staying logged in: the farmer may not remember the password.
+      clearAll(['session'])
       try {
         sessionStorage.clear()
       } catch {

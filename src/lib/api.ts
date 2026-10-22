@@ -1,6 +1,8 @@
 import type {
   AlertsResponse,
   ApiErrorBody,
+  AuthRequest,
+  AuthResponse,
   ApiErrorCode,
   ChatEvent,
   ChatRequest,
@@ -13,6 +15,7 @@ import type {
   WeatherResponse,
 } from '../../shared/types'
 import type { MessageKey, TranslateVars } from '../i18n'
+import { authHeader, logOut } from './auth'
 import { deviceHeader } from './device'
 
 export type ClientErrorCode = ApiErrorCode | 'network'
@@ -74,6 +77,8 @@ function timeoutSignal(ms: number, outer?: AbortSignal) {
 
 async function errorFrom(res: Response) {
   const body = (await res.json().catch(() => ({}))) as Partial<ApiErrorBody>
+  // The session is gone on the server (expired, or the password was reset): back to the log-in screen.
+  if (body.error === 'unauthorized') logOut('ended')
   return new ApiError(body.error ?? 'server_error', body.retryAt)
 }
 
@@ -89,15 +94,26 @@ async function request<T>(path: string, init: RequestInit = {}, timeoutMs = 30_0
 }
 
 /** A POST answered with "204 No Content". */
-async function post(path: string, body: unknown): Promise<void> {
+async function post(path: string, body: unknown, headers: Record<string, string> = {}): Promise<void> {
   let res: Response
   try {
-    res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: timeoutSignal(30_000) })
+    res = await fetch(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+      signal: timeoutSignal(30_000),
+    })
   } catch {
     throw new ApiError('network')
   }
   if (!res.ok) throw await errorFrom(res)
 }
+
+const postJson = (body: unknown, headers: Record<string, string> = {}): RequestInit => ({
+  method: 'POST',
+  headers: { 'content-type': 'application/json', ...headers },
+  body: JSON.stringify(body),
+})
 
 const qs = (params: Record<string, string | number | undefined>) =>
   new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== '') as [string, string][]).toString()
@@ -112,10 +128,15 @@ export const api = {
   pushSubscribe: (body: { endpoint: string; lang: Lang; state?: string; district?: string; coords?: { lat: number; lon: number } }) =>
     post('/api/push/subscribe', body),
   pushUnsubscribe: (endpoint: string) => post('/api/push/unsubscribe', { endpoint }),
+  signup: (body: AuthRequest) => request<AuthResponse>('/api/auth/signup', postJson(body)),
+  login: (body: AuthRequest) => request<AuthResponse>('/api/auth/login', postJson(body)),
+  /** Forgot password: sets a new one (no OTP yet). */
+  resetPassword: (body: AuthRequest) => request<AuthResponse>('/api/auth/reset', postJson(body)),
+  logout: () => post('/api/auth/logout', {}, authHeader()),
   diagnose: (body: DiagnoseRequest) =>
     request<DiagnoseResult>(
       '/api/diagnose',
-      { method: 'POST', headers: { 'content-type': 'application/json', ...deviceHeader() }, body: JSON.stringify(body) },
+      postJson(body, { ...deviceHeader(), ...authHeader() }),
       // Upload on 2G plus a careful look at the photo.
       120_000,
     ),
@@ -153,7 +174,7 @@ export async function* streamChat(body: ChatRequest, signal: AbortSignal): Async
     try {
       res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', ...deviceHeader() },
+        headers: { 'content-type': 'application/json', ...deviceHeader(), ...authHeader() },
         body: JSON.stringify(body),
         signal: watchdog.signal,
       })
