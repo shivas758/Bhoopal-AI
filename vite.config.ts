@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { cloudflare } from '@cloudflare/vite-plugin'
 import { VitePWA } from 'vite-plugin-pwa'
+import { minimal2023Preset } from '@vite-pwa/assets-generator/config'
 
 export default defineConfig({
   define: {
@@ -35,6 +36,14 @@ export default defineConfig({
       injectRegister: false,
       pwaAssets: {
         image: 'public/logo.svg',
+        // Home-screen icons on the logo's own green (not the default white), so the tile's rounded corners
+        // disappear and the whole icon is green. Android cuts the maskable icon to a circle: 10% padding keeps the
+        // soil's tips inside its safe zone. iOS rounds the corners itself.
+        preset: {
+          ...minimal2023Preset,
+          maskable: { sizes: [512], padding: 0.1, resizeOptions: { background: '#15803d' } },
+          apple: { sizes: [180], padding: 0, resizeOptions: { background: '#15803d' } },
+        },
         overrideManifestIcons: true,
       },
       manifest: {
