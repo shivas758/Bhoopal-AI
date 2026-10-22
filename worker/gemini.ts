@@ -43,6 +43,19 @@ type Method = 'generateContent' | 'streamGenerateContent'
  */
 const restingUntil = new Map<string, number>()
 
+/**
+ * Gemini refuses some places the Worker can run in (e.g. Cloudflare's Hong Kong data centre, where the Gemini API
+ * isn't offered: 400 FAILED_PRECONDITION). An isolate stays in one data centre, so after every model refused, this
+ * one stops asking for a while and chat goes straight to the backup model instead of waiting for five refusals.
+ */
+export class GeminiRefusedHere extends UpstreamError {
+  constructor() {
+    super('Gemini: not available from this location', 403)
+  }
+}
+const REFUSED_PAUSE_MS = 10 * 60 * 1000
+let refusedHereUntil = 0
+
 /** A model failed mid-stream (overloaded): skip it in this isolate for a minute. */
 export function pauseModel(model: string, seconds = 60) {
   restingUntil.set(model, Math.max(restingUntil.get(model) ?? 0, Date.now() + seconds * 1000))
@@ -78,6 +91,8 @@ interface ErrorInfo {
   summary: string
   daily: boolean
   retrySeconds?: number
+  /** "User location is not supported for the API use", or the free tier not offered in this country. */
+  refusedHere: boolean
 }
 
 /** e.g. "RESOURCE_EXHAUSTED GenerateRequestsPerDayPerProjectPerModel-FreeTier limit=20 retry=40320s" */
@@ -95,14 +110,22 @@ function parseError(text: string): ErrorInfo {
     const violations = (err.details ?? []).flatMap((d) => d.violations ?? [])
     const retry = err.details?.find((d) => d.retryDelay)?.retryDelay
     return {
+      // Quota errors are summed up by their limits; anything else needs Google's own words to be understood.
       summary:
-        [err.status, ...violations.map((v) => `${v.quotaId} limit=${v.quotaValue}`), retry && `retry=${retry}`].filter(Boolean).join(' ') ||
-        (err.message ?? '').slice(0, 200),
+        [
+          err.status,
+          ...violations.map((v) => `${v.quotaId} limit=${v.quotaValue}`),
+          retry && `retry=${retry}`,
+          !violations.length && err.message?.slice(0, 160),
+        ]
+          .filter(Boolean)
+          .join(' ') || (err.message ?? '').slice(0, 200),
       daily: violations.some((v) => /PerDay/i.test(v.quotaId ?? '')),
       retrySeconds: retry ? parseFloat(retry) : undefined,
+      refusedHere: err.status === 'FAILED_PRECONDITION',
     }
   } catch {
-    return { summary: text.slice(0, 200), daily: false }
+    return { summary: text.slice(0, 200), daily: false, refusedHere: false }
   }
 }
 
@@ -129,6 +152,7 @@ function poolRetryAt(models: string[]) {
 
 /** Calls the best Gemini model that still has free quota, moving down the pool on rate limits or outages. */
 export async function callGemini(env: Env, method: Method, body: GeminiRequest, opts: GeminiCallOptions = {}): Promise<{ res: Response; model: string }> {
+  if (Date.now() < refusedHereUntil) throw new GeminiRefusedHere()
   // Models another isolate already found out of quota today (shared store), so this one doesn't re-probe them.
   for (const [service, until] of Object.entries(await restingNow(env.DB))) {
     if (service.startsWith('gemini:') && until > (restingUntil.get(service.slice(7)) ?? 0)) restingUntil.set(service.slice(7), until)
@@ -138,6 +162,7 @@ export async function callGemini(env: Env, method: Method, body: GeminiRequest, 
   const pool = all.filter((m) => (restingUntil.get(m) ?? 0) <= now && !opts.exclude?.includes(m))
   const models = opts.preferModel && pool.includes(opts.preferModel) ? [opts.preferModel, ...pool.filter((m) => m !== opts.preferModel)] : pool
   let lastError = new UpstreamError('Gemini: no other model available', 503)
+  let refusals = 0
 
   for (const model of models) {
     const request = opts.preferModel && model !== opts.preferModel && opts.forOtherModel ? opts.forOtherModel(body) : body
@@ -158,8 +183,14 @@ export async function callGemini(env: Env, method: Method, body: GeminiRequest, 
       restingUntil.set(model, until)
       await rest(env.DB, `gemini:${model}`, until)
     }
+    if (info.refusedHere) refusals++
     lastError = new UpstreamError(`Gemini ${res.status}`, res.status)
     if (![400, 404, 429, 500, 503].includes(res.status)) break
+  }
+  // Every model refused this location (one refusal alone could be about that model, so all are tried first).
+  if (refusals && refusals === models.length) {
+    refusedHereUntil = Date.now() + REFUSED_PAUSE_MS
+    throw new GeminiRefusedHere()
   }
   // Every model is resting: report when the first one is back, so the farmer gets a real time.
   const later = Date.now()

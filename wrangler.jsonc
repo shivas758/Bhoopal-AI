@@ -6,6 +6,11 @@
   // request.signal fires when the farmer leaves, so an abandoned answer stops spending Gemini quota.
   "compatibility_flags": ["enable_request_signal"],
   "observability": { "enabled": true },
+  // Run /api/* near Google Cloud's Mumbai region instead of wherever the farmer's network lands. Some Indian
+  // networks reach Cloudflare in Hong Kong, where Gemini refuses requests (400 FAILED_PRECONDITION, "location not
+  // supported"). Static files are still served from the nearest Cloudflare location. Crons aren't moved, and
+  // don't call Gemini.
+  "placement": { "region": "gcp:asia-south1" },
   "assets": {
     // The React PWA is served as static assets; only /api/* runs the Worker.
     "not_found_handling": "single-page-application",
@@ -72,6 +77,7 @@
     // Build and deploy with `npm run deploy:staging`. Bindings and vars are not inherited, so they're repeated
     // here; secrets are set separately with `--env staging`. It shares the Gemini key, and so its quota.
     "staging": {
+      "placement": { "region": "gcp:asia-south1" },
       "secrets": { "required": ["GEMINI_API_KEY", "DATA_GOV_API_KEY", "VAPID_PRIVATE_JWK"] },
       "vars": {
         "GEMINI_MODELS": "gemini-3.6-flash,gemini-3.7-flash,gemini-3.5-flash,gemini-2.5-flash,gemini-3.5-flash-lite",

@@ -17,7 +17,17 @@ import { fold } from '../shared/text'
 import { BACKUP_MODEL, spendBackupBudget, streamBackupAnswer } from './backupAi'
 import { spendDailyBudget } from './budget'
 import { weatherAnswer } from './forecastText'
-import { callGemini, pauseModel, readGeminiStream, toolHistoryAsText, toolResultText, type GeminiChunk, type GeminiContent, type GeminiPart } from './gemini'
+import {
+  GeminiRefusedHere,
+  callGemini,
+  pauseModel,
+  readGeminiStream,
+  toolHistoryAsText,
+  toolResultText,
+  type GeminiChunk,
+  type GeminiContent,
+  type GeminiPart,
+} from './gemini'
 import { record, type MetricEvent } from './metrics'
 import { readAnswer, writeAnswer } from './store'
 import { detectIntents } from './intents'
@@ -219,8 +229,9 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
   const run = async () => {
     let calls = 0
     const toolsUsed = new Set<string>()
-    // Set once the data is looked up: how to answer if every Gemini model has used today's free quota.
-    let whenResting: (() => Promise<boolean>) | undefined
+    // Set once the data is looked up: how to answer if every Gemini model has used today's free quota, or Gemini
+    // refuses the place this Worker runs in.
+    let whenResting: ((why: 'resting' | 'refused') => Promise<boolean>) | undefined
     try {
       // 1. Look up what the question obviously needs before the first AI call (saves a whole tool round).
       const intents = detectIntents(question)
@@ -279,9 +290,9 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
       const schemes = intents.schemes ? schemeInfo(req.lang, state?.id) : undefined
       const systemInstruction = { parts: [{ text: chatSystemPrompt(req.lang, farmer, { historyCut: req.historyCut, schemes }) }] }
 
-      // Every Gemini model resting (free daily quota used up): prices and weather come straight from the data,
-      // anything else from the backup model, which is told it cannot look anything up.
-      whenResting = async () => {
+      // Every Gemini model resting (free daily quota used up) or refusing this location: prices and weather come
+      // straight from the data, anything else from the backup model, which is told it cannot look anything up.
+      whenResting = async (why) => {
         const price = priceText()
         if (price) return answerNow(price, 'template', 'resting_template', { tools: 'get_mandi_prices' })
         if (intents.weather) {
@@ -312,7 +323,7 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
           await send({ type: 'cut' })
         }
         await send({ type: 'done' })
-        metric('backup', { model: BACKUP_MODEL, calls })
+        metric('backup', { model: BACKUP_MODEL, calls, detail: why })
         return true
       }
       const generationConfig = { temperature: 0.5, maxOutputTokens: MAX_OUTPUT_TOKENS }
@@ -456,7 +467,8 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
         return
       }
       const busy = err instanceof UpstreamError && err.status === 429
-      if (busy && whenResting && !sentText && (await whenResting().catch(() => false))) return
+      const refused = err instanceof GeminiRefusedHere
+      if ((busy || refused) && whenResting && !sentText && (await whenResting(refused ? 'refused' : 'resting').catch(() => false))) return
       console.error(`chat ${qid} failed`, err)
       const retryAt = busy && err.retryAt ? new Date(err.retryAt).toISOString() : undefined
       await send({ type: 'error', code: busy ? 'busy' : 'upstream', ...(retryAt ? { retryAt } : {}) }).catch(() => {})
