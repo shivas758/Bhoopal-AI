@@ -133,6 +133,8 @@ export const api = {
   /** Forgot password: sets a new one (no OTP yet). */
   resetPassword: (body: AuthRequest) => request<AuthResponse>('/api/auth/reset', postJson(body)),
   logout: () => post('/api/auth/logout', {}, authHeader()),
+  /** "This phone opened the app today" (a count for the owner's analytics page). */
+  seen: () => post('/api/seen', {}, authHeader()),
   diagnose: (body: DiagnoseRequest) =>
     request<DiagnoseResult>(
       '/api/diagnose',

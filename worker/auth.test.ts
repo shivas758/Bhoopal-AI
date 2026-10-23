@@ -3,10 +3,11 @@ import { formatPhone, normalizePhone, validPassword } from '../shared/account'
 import { ITERATIONS, checkPassword, handleLogin, handleLogout, handleReset, handleSignup, hashPassword, sessionPhone } from './auth'
 import worker from './index'
 
-/** Just the users and sessions tables, for the statements worker/auth.ts runs. */
+/** Just the users, sessions and activity tables, for the statements worker/auth.ts runs. */
 function fakeDb() {
-  const users = new Map<string, { password: string; created: number }>()
+  const users = new Map<string, { password: string; created: number; lastSeen?: number }>()
   const sessions = new Map<string, { phone: string; created: number; expires: number }>()
+  const activity = new Map<string, Record<string, number>>()
   const statement = (sql: string, params: unknown[] = []) => ({
     bind: (...p: unknown[]) => statement(sql, p),
     async run() {
@@ -24,6 +25,20 @@ function fakeDb() {
           user.password = password
           changes = 1
         }
+      } else if (sql.startsWith('UPDATE users SET last_seen')) {
+        const [lastSeen, phone] = params as [number, string]
+        const user = users.get(phone)
+        if (user) {
+          user.lastSeen = lastSeen
+          changes = 1
+        }
+      } else if (sql.startsWith('INSERT INTO activity')) {
+        const kind = /INSERT INTO activity \(day, phone, (\w+)\)/.exec(sql)![1]
+        const [day, phone] = params as [string, string]
+        const row = activity.get(`${day}:${phone}`) ?? {}
+        row[kind] = (row[kind] ?? 0) + 1
+        activity.set(`${day}:${phone}`, row)
+        changes = 1
       } else if (sql.startsWith('INSERT INTO sessions')) {
         const [id, phone, created, expires] = params as [string, string, number, number]
         sessions.set(id, { phone, created, expires })
@@ -49,7 +64,11 @@ function fakeDb() {
       throw new Error(`unexpected SQL: ${sql}`)
     },
   })
-  return { db: { prepare: (sql: string) => statement(sql) } as unknown as D1Database, users, sessions }
+  const db = {
+    prepare: (sql: string) => statement(sql),
+    batch: (statements: ReturnType<typeof statement>[]) => Promise.all(statements.map((s) => s.run())),
+  }
+  return { db: db as unknown as D1Database, users, sessions, activity }
 }
 
 const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
@@ -105,7 +124,7 @@ describe('password hashes', () => {
 
 describe('accounts', () => {
   test('sign up, log out, log in, wrong password, unknown number', async () => {
-    const { db, users, sessions } = fakeDb()
+    const { db, users, sessions, activity } = fakeDb()
     const env = { DB: db } as Env
 
     const signup = await handleSignup(post('/api/auth/signup', { phone: '+91 98765 43210', password: 'ragi2026' }), env)
@@ -116,6 +135,9 @@ describe('accounts', () => {
     // Only the token's hash is stored.
     expect([...sessions.keys()][0]).toMatch(/^[0-9a-f]{64}$/)
     expect(await sessionPhone(post('/api/chat', {}, bearer(token)), env)).toBe('9876543210')
+    // The log-in counts as today's activity for the owner's analytics page.
+    expect([...activity.values()]).toEqual([{ logins: 1 }])
+    expect(users.get('9876543210')?.lastSeen).toBeTypeOf('number')
 
     const again = await handleSignup(post('/api/auth/signup', { phone: '9876543210', password: 'other123' }), env)
     expect(again.status).toBe(409)

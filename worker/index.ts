@@ -1,5 +1,6 @@
 import { isLang, type FeedbackRequest } from '../shared/types'
-import { handleLogin, handleLogout, handleReset, handleSignup, rejectLoggedOut } from './auth'
+import { handleAdminStats } from './admin'
+import { handleLogin, handleLogout, handleReset, handleSeen, handleSignup, sessionPhone } from './auth'
 import { handleChat } from './chat'
 import { runCron } from './cron'
 import { handleDiagnose } from './diagnose'
@@ -7,7 +8,7 @@ import { record } from './metrics'
 import { handleDistricts, handlePrices } from './prices'
 import { handlePushKey, handlePushMessage, handleSubscribe, handleUnsubscribe } from './push'
 import { handleAlerts } from './sachet'
-import { readStatus } from './store'
+import { noteActivity, readStatus } from './store'
 import { BadRequest, UpstreamError, apiError, json } from './util'
 import { handleWeather } from './weather'
 
@@ -26,6 +27,7 @@ const MAX_BODY_BYTES: Record<string, number> = {
   '/api/auth/login': 1024,
   '/api/auth/reset': 1024,
   '/api/auth/logout': 1024,
+  '/api/seen': 1024,
   '/api/push/subscribe': 4 * 1024,
   '/api/push/unsubscribe': 4 * 1024,
   '/api/push/message': 4 * 1024,
@@ -94,12 +96,32 @@ export default {
         case 'GET /api/prices':
           if (!(await allowed(env.PRICES_LIMITER, request))) return apiError('rate_limited', 429)
           return await handlePrices(url, env)
-        case 'POST /api/chat':
+        // Only logged-in farmers can use the AI; each use is counted for the owner's analytics page.
+        case 'POST /api/chat': {
           if (!(await allowed(env.CHAT_LIMITER, request))) return apiError('rate_limited', 429)
-          return rejectPost(request, url.pathname) ?? (await rejectLoggedOut(request, env)) ?? (await handleChat(request, env, ctx))
-        case 'POST /api/diagnose':
+          const rejected = rejectPost(request, url.pathname)
+          if (rejected) return rejected
+          const phone = await sessionPhone(request, env)
+          if (!phone) return apiError('unauthorized', 401)
+          ctx.waitUntil(noteActivity(env.DB, phone, 'chats'))
+          return await handleChat(request, env, ctx)
+        }
+        case 'POST /api/diagnose': {
           if (!(await allowed(env.PHOTO_LIMITER, request))) return apiError('rate_limited', 429)
-          return rejectPost(request, url.pathname) ?? (await rejectLoggedOut(request, env)) ?? (await handleDiagnose(request, env))
+          const rejected = rejectPost(request, url.pathname)
+          if (rejected) return rejected
+          const phone = await sessionPhone(request, env)
+          if (!phone) return apiError('unauthorized', 401)
+          ctx.waitUntil(noteActivity(env.DB, phone, 'photos'))
+          return await handleDiagnose(request, env)
+        }
+        case 'POST /api/seen':
+          if (!(await allowed(env.DATA_LIMITER, request))) return apiError('rate_limited', 429)
+          return rejectPost(request, url.pathname) ?? (await handleSeen(request, env))
+        case 'GET /api/admin/stats':
+          // The owner's analytics page; the log-in limiter also slows down anyone guessing the token.
+          if (!(await allowed(env.AUTH_LIMITER, request))) return apiError('rate_limited', 429)
+          return await handleAdminStats(request, env)
         case 'POST /api/auth/signup':
           if (!(await allowed(env.AUTH_LIMITER, request))) return apiError('rate_limited', 429)
           return rejectPost(request, url.pathname) ?? (await handleSignup(request, env))

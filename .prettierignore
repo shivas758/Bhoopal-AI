@@ -6,3 +6,8 @@ worker-configuration.d.ts
 package-lock.json
 migrations
 shared/districtData.ts
+
+# Agent skills, their lock file and the promo video renders
+.claude
+skills-lock.json
+video/out

@@ -81,6 +81,26 @@ export function spend(db: Db, day: string, scopes: string[]): Promise<number[] |
   })
 }
 
+// ---- activity per account (the owner's analytics page, worker/admin.ts) -----------------------------------
+
+export type ActivityKind = 'opens' | 'logins' | 'chats' | 'photos'
+const ACTIVITY_KINDS: ReadonlySet<string> = new Set<ActivityKind>(['opens', 'logins', 'chats', 'photos'])
+
+/**
+ * Counts one use of the account on today's India date and marks the account seen. Counts only, never what was
+ * asked. Best effort and one round trip: a slow store must not hold a farmer's answer back.
+ */
+export function noteActivity(db: Db, phone: string, kind: ActivityKind, now = Date.now()): Promise<void> {
+  if (!db || !ACTIVITY_KINDS.has(kind)) return Promise.resolve()
+  const day = new Date(now + 5.5 * 3600_000).toISOString().slice(0, 10)
+  return safely('activity', undefined, async () => {
+    await db.batch([
+      db.prepare(`INSERT INTO activity (day, phone, ${kind}) VALUES (?, ?, 1) ON CONFLICT (day, phone) DO UPDATE SET ${kind} = ${kind} + 1`).bind(day, phone),
+      db.prepare('UPDATE users SET last_seen = ? WHERE phone = ?').bind(now, phone),
+    ])
+  })
+}
+
 // ---- answer cache -------------------------------------------------------------------------------------
 
 export function readAnswer(db: Db, hash: string): Promise<{ text: string; model: string | null } | undefined> {
@@ -174,7 +194,7 @@ export function readStatus(db: Db): Promise<Record<string, ServiceStatus>> {
 
 // ---- housekeeping (daily cron) ------------------------------------------------------------------------
 
-/** Deletes expired cache rows, old answers and budgets, and snapshots older than ~5 weeks. */
+/** Deletes expired cache rows, old answers and budgets, snapshots older than ~5 weeks and activity older than ~13 months. */
 export function cleanUp(db: Db, now = Date.now()): Promise<void> {
   if (!db) return Promise.resolve()
   const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)
@@ -186,6 +206,7 @@ export function cleanUp(db: Db, now = Date.now()): Promise<void> {
       db.prepare('DELETE FROM budget WHERE day < ?').bind(day(now - 3 * 86400_000)),
       db.prepare('DELETE FROM prices WHERE date < ?').bind(day(now - 35 * 86400_000)),
       db.prepare('DELETE FROM sessions WHERE expires < ?').bind(now),
+      db.prepare('DELETE FROM activity WHERE day < ?').bind(day(now - 400 * 86400_000)),
     ])
   })
 }

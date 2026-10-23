@@ -12,3 +12,7 @@ dev-dist
 
 # Local planning notes (not published)
 plan*.md
+
+# Promo video (video/): own node_modules and renders
+video/node_modules/
+video/out/

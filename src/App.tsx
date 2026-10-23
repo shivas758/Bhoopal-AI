@@ -4,14 +4,19 @@ import { InstallScreen, useInstallState } from './components/InstallScreen'
 import { UpdateToast } from './components/PwaPrompts'
 import { PushSync } from './components/PushToggle'
 import { OfflineBanner, Spinner } from './components/ui'
+import { api } from './lib/api'
 import { useSession } from './lib/auth'
+import { todayInIndia } from './lib/format'
 import { useRoute, type Route } from './lib/router'
+import { readJson, writeJson } from './lib/storage'
 import { Chat } from './pages/Chat'
 import { Home } from './pages/Home'
 import { Login } from './pages/Login'
 import { Onboarding } from './pages/Onboarding'
 import { Weather } from './pages/Weather'
 import { useSettings } from './settings'
+
+const Admin = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Admin })))
 
 // Home, Ask and Weather are in the first download; the rest load when opened (and are still cached for offline
 // use by the service worker), so the first screen appears sooner on 2G.
@@ -24,12 +29,31 @@ const PAGES: Record<Route, React.ComponentType> = {
   tools: lazy(() => import('./pages/Tools').then((m) => ({ default: m.Tools }))),
   settings: lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings }))),
   more: lazy(() => import('./pages/More').then((m) => ({ default: m.More }))),
+  // Never reached through Main: App shows it on its own, without the farmer's screens.
+  admin: Admin,
+}
+
+let seenReported = false
+/** Once a day, tells the Worker that this logged-in phone opened the app: a count for the owner's analytics page. */
+function useReportSeen() {
+  useEffect(() => {
+    const today = todayInIndia()
+    if (seenReported || readJson<string>('seenDay', '') === today) return
+    seenReported = true
+    api.seen().then(
+      () => writeJson('seenDay', today),
+      () => {
+        seenReported = false
+      },
+    )
+  }, [])
 }
 
 function Main() {
   const { route } = useRoute()
   const Page = PAGES[route]
   const first = useRef(true)
+  useReportSeen()
   // After a page change, move focus to its heading so screen readers announce the new page (not on app start).
   useEffect(() => {
     if (first.current) {
@@ -53,6 +77,16 @@ export function App() {
   const { settings } = useSettings()
   const session = useSession()
   const install = useInstallState()
+  const { route } = useRoute()
+  // The owner's analytics page has its own key (the ADMIN_TOKEN secret), so it skips the language, home-screen
+  // and log-in steps. Opened by typing #/admin; nothing in the app links to it.
+  if (route === 'admin') {
+    return (
+      <Suspense fallback={<Spinner />}>
+        <Admin />
+      </Suspense>
+    )
+  }
   return (
     <>
       {/* Language first, so every later screen is in the farmer's language; then, on a phone's browser, once: add BhooPal

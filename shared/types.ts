@@ -268,3 +268,78 @@ export interface DiagnoseResult {
   /** The photo seems to show a different crop than the farmer named; likelihoods are capped at low. */
   crop_mismatch?: boolean
 }
+
+// ---- the owner's analytics page (GET /api/admin/stats, worker/admin.ts, src/pages/Admin.tsx) -------------------
+
+/** One India date of accounts and activity: a zero-filled row for every day in the window. */
+export interface AdminDay {
+  day: string
+  signups: number
+  /** Accounts that opened the app, logged in, asked or checked a photo that day. */
+  active: number
+  opens: number
+  logins: number
+  chats: number
+  photos: number
+}
+
+export interface AdminUser {
+  phone: string
+  created: number
+  lastSeen: number | null
+  /** Counts within the window. */
+  opens: number
+  logins: number
+  chats: number
+  photos: number
+  activeDays: number
+}
+
+export interface AdminAiDay {
+  day: string
+  chats: number
+  photos: number
+  /** Answered by the AI, the cache, a template or the backup AI; the rest were not answered. */
+  answered: number
+  failed: number
+  /** Thumbs up and down on answers and photo checks. */
+  up: number
+  down: number
+}
+
+/** The AI's outcomes from Analytics Engine, only when CF_ANALYTICS_TOKEN is set. Counts are sampling-corrected and rounded. */
+export interface AdminAiStats {
+  daily: AdminAiDay[]
+  outcomes: { kind: string; outcome: string; n: number }[]
+  /** Chat answers per model and outcome, with the average time in ms. */
+  models: { model: string; outcome: string; n: number; ms: number }[]
+  langs: { kind: string; lang: string; n: number }[]
+  states: { kind: string; state: string; n: number }[]
+  /** Why the section is empty (the SQL API failed or isn't configured). */
+  error?: string
+}
+
+export interface AdminStats {
+  /** When this was computed (ms since epoch). */
+  generated: number
+  /** Days in the window, today included. */
+  days: number
+  version?: string
+  totals: {
+    users: number
+    /** Sessions not yet expired: roughly logged-in phones. */
+    sessions: number
+    pushSubs: number
+    newToday: number
+    new7: number
+    new30: number
+    activeToday: number
+    active7: number
+    active30: number
+  }
+  daily: AdminDay[]
+  /** Most recently seen first; at most 500. */
+  users: AdminUser[]
+  push: { byState: { state: string; n: number }[]; byLang: { lang: string; n: number }[] }
+  ai?: AdminAiStats
+}

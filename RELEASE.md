@@ -47,6 +47,8 @@ update: another reason to keep API changes additive.
 ## Once a month
 
 - Test on one cheap Android phone in Telugu or Hindi (voice in and out, offline start).
-- Look at the thumbs-down answers: Analytics Engine dataset `bhoopal_events`, `index1 = 'feedback'`
+- Open `/#/admin` (the owner's analytics page, `ADMIN_TOKEN`): who signed up, who comes back, how many
+  questions went unanswered and why, thumbs down per model.
+- Look at the thumbs-down answers themselves: Analytics Engine dataset `bhoopal_events`, `index1 = 'feedback'`
   (3 months retention).
 - `npm outdated`; update in a branch and let CI check it.

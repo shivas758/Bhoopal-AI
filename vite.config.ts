@@ -73,6 +73,8 @@ export default defineConfig(({ mode }) => ({
         cleanupOutdatedCaches: true,
         // Morning weather and official-warning notifications (public/push-sw.js).
         importScripts: ['push-sw.js'],
+        // The owner's analytics page (src/pages/Admin.tsx) is not precached on farmers' phones; it loads when opened.
+        globIgnores: ['**/Admin-*.js'],
       },
     }),
   ],

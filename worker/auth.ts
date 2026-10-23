@@ -1,8 +1,10 @@
 import { normalizePhone, validPassword } from '../shared/account'
 import type { AuthResponse } from '../shared/types'
+import { noteActivity } from './store'
 import { BadRequest, apiError, b64url, fromB64url, json, sha256Hex, utf8 } from './util'
 
-// Accounts are a mobile number and a password; nothing else about the farmer is kept. Passwords are stored as
+// Accounts are a mobile number and a password; besides daily use counts (worker/store.ts noteActivity, for the
+// owner's analytics page) nothing else about the farmer is kept. Passwords are stored as
 // PBKDF2-SHA256 (the only password hash in Web Crypto). OWASP asks for 600,000 rounds, but the free plan allows
 // 10 ms CPU per request and 20,000 already take about 5 ms. The round count is saved in each hash, so it can be
 // raised later (e.g. on a paid plan) without breaking existing passwords.
@@ -48,6 +50,7 @@ async function startSession(env: Env, phone: string): Promise<Response> {
   await env.DB.prepare('INSERT INTO sessions (id, phone, created, expires) VALUES (?, ?, ?, ?)')
     .bind(await sha256Hex(token), phone, now, now + SESSION_MS)
     .run()
+  await noteActivity(env.DB, phone, 'logins', now)
   return json({ token, phone } satisfies AuthResponse)
 }
 
@@ -106,7 +109,10 @@ export async function sessionPhone(request: Request, env: Env): Promise<string |
   return row?.phone
 }
 
-/** Only logged-in farmers can use the AI (chat and photo checks). */
-export async function rejectLoggedOut(request: Request, env: Env): Promise<Response | undefined> {
-  return (await sessionPhone(request, env)) ? undefined : apiError('unauthorized', 401)
+/** The app opened with a saved log-in (it reports this once a day per phone): counted for the owner's analytics page. */
+export async function handleSeen(request: Request, env: Env): Promise<Response> {
+  const phone = await sessionPhone(request, env)
+  if (!phone) return apiError('unauthorized', 401)
+  await noteActivity(env.DB, phone, 'opens')
+  return new Response(null, { status: 204 })
 }

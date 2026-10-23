@@ -62,10 +62,13 @@ await check(
   { method: 'POST', headers: json, body: JSON.stringify({ phone: '6000000000', password: 'smoke-test-only' }) },
   (r, b) => r.status === 404 || r.status === 401 || `expected 404 or 401, got ${JSON.stringify(b).slice(0, 200)} (npm run db:migrate?)`,
 )
+// The owner's analytics page: 401 without its token (404 means the ADMIN_TOKEN secret isn't set, which is allowed).
+await check('analytics page needs its token', '/api/admin/stats', {}, (r) => r.status === 401 || r.status === 404 || 'expected 401 or 404')
 // Rejections last: the Worker answers them without reading the body, which can upset a reused local
 // dev-server connection for the next request.
 // No body: the 401 comes before the body is read, and an unread body would upset the next request locally.
 await check('chat needs log-in', '/api/chat', { method: 'POST', headers: json }, (r) => r.status === 401 || 'expected 401')
+await check('app-open count needs log-in', '/api/seen', { method: 'POST', headers: json }, (r) => r.status === 401 || 'expected 401')
 await check(
   'chat rejects text/plain',
   '/api/chat',

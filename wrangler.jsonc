@@ -25,8 +25,16 @@
   //   GEMINI_API_KEY     - free key from https://aistudio.google.com/apikey
   //   DATA_GOV_API_KEY   - free key from https://www.data.gov.in (My Account > API key)
   //   VAPID_PRIVATE_JWK  - Web Push signing key: `npm run vapid` prints a new one (JSON); pipe it to the command
-  "secrets": { "required": ["GEMINI_API_KEY", "DATA_GOV_API_KEY", "VAPID_PRIVATE_JWK"] },
+  //   ADMIN_TOKEN        - opens the owner's analytics page (#/admin): any long random string (`openssl rand -base64 32`).
+  //                        Without it the page and GET /api/admin/stats are off (404).
+  //   CF_ANALYTICS_TOKEN - optional: a Cloudflare API token with "Account Analytics: Read", for that page's AI section.
+  //                        Not listed below (`wrangler deploy` insists on every listed secret); typed in worker/env.d.ts.
+  "secrets": { "required": ["GEMINI_API_KEY", "DATA_GOV_API_KEY", "VAPID_PRIVATE_JWK", "ADMIN_TOKEN"] },
   "vars": {
+    // The analytics page reads the AI's outcomes through the Analytics Engine SQL API, which needs the account id
+    // and the dataset's name (the STATS binding doesn't expose it). Neither is secret.
+    "CF_ACCOUNT_ID": "672786c6e6d366012e3b2a9f342010fb",
+    "STATS_DATASET": "bhoopal_events",
     // Gemini models, best first. The free tier allows ~20 requests/day PER MODEL, so the Worker
     // rotates through all of them. Most questions use 1 request (the Worker looks prices, weather and
     // schemes up first); a few need 2–3, and rare retries 4. Price buttons use none.
@@ -81,8 +89,10 @@
     // here; secrets are set separately with `--env staging`. It shares the Gemini key, and so its quota.
     "staging": {
       "placement": { "region": "gcp:asia-south1" },
-      "secrets": { "required": ["GEMINI_API_KEY", "DATA_GOV_API_KEY", "VAPID_PRIVATE_JWK"] },
+      "secrets": { "required": ["GEMINI_API_KEY", "DATA_GOV_API_KEY", "VAPID_PRIVATE_JWK", "ADMIN_TOKEN"] },
       "vars": {
+        "CF_ACCOUNT_ID": "672786c6e6d366012e3b2a9f342010fb",
+        "STATS_DATASET": "bhoopal_staging_events",
         "GEMINI_MODELS": "gemini-3.6-flash,gemini-3.7-flash,gemini-3.5-flash,gemini-2.5-flash,gemini-3.5-flash-lite",
         "GEMINI_THINKING_LEVEL": "low",
         "USER_AGENT": "BhooPal/0.1 (+https://bhoopal.shivasahith.workers.dev)",
