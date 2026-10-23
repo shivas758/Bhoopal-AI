@@ -1,6 +1,8 @@
-import { Calculator, Camera, ChevronRight, Landmark, Settings as SettingsIcon } from 'lucide-react'
+import { Calculator, Camera, ChevronRight, Landmark, Settings as SettingsIcon, Smartphone } from 'lucide-react'
 import { ExperimentalBadge, PageHeader, ShareButton, secondaryButton } from '../components/ui'
 import type { MessageKey } from '../i18n'
+import { requestInstallScreen } from '../lib/installPrompt'
+import { isStandalone, platform } from '../lib/platform'
 import { go, type Route } from '../lib/router'
 import { appUrl } from '../lib/share'
 import { useT } from '../settings'
@@ -36,6 +38,12 @@ export function More() {
         ))}
         {/* Farmers hear about apps from other farmers: make passing it on one tap. */}
         <ShareButton content={async () => ({ text: t('share.appText', { url: appUrl() }) })} label={t('share.app')} className={`${secondaryButton} mt-2`} />
+        {/* The way back to the install screen after "Not now" (and to re-install after an uninstall). */}
+        {platform() !== 'other' && !isStandalone() && (
+          <button onClick={requestInstallScreen} className={secondaryButton}>
+            <Smartphone className="size-5" aria-hidden /> {t('more.install')}
+          </button>
+        )}
       </main>
     </>
   )

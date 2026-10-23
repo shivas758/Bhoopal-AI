@@ -1,11 +1,10 @@
 import type { Settings } from '../settings'
 import { api } from './api'
+import { isIos } from './platform'
 import { readJson, writeJson } from './storage'
 
 /** Why the morning message can't be turned on here, if it can't. */
 export type PushBlock = 'unsupported' | 'ios-install' | 'denied'
-
-const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
 
 export function pushBlock(): PushBlock | undefined {
   // iPhones support Web Push only for apps added to the Home Screen (iOS 16.4+), where PushManager appears.

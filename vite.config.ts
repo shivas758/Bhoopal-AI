@@ -5,7 +5,7 @@ import { cloudflare } from '@cloudflare/vite-plugin'
 import { VitePWA } from 'vite-plugin-pwa'
 import { minimal2023Preset } from '@vite-pwa/assets-generator/config'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? '0.1.0'),
     __BUILD__: JSON.stringify(new Date().toISOString()),
@@ -60,6 +60,11 @@ export default defineConfig({
         background_color: '#f7f7f2',
         theme_color: '#15803d',
         categories: ['agriculture', 'education', 'utilities'],
+        // Lets Android Chrome tell the app it is already installed (navigator.getInstalledRelatedApps), so a farmer
+        // who opens the link in a browser tab isn't asked to install it again. Must be the absolute manifest URL.
+        related_applications: [
+          { platform: 'webapp', url: `https://bhoopal${mode === 'staging' ? '-staging' : ''}.shivasahith.workers.dev/manifest.webmanifest` },
+        ],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
@@ -71,4 +76,4 @@ export default defineConfig({
       },
     }),
   ],
-})
+}))

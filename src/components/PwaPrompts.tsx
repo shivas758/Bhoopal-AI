@@ -1,42 +1,22 @@
 import { Download, RefreshCw, X } from 'lucide-react'
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { answering } from '../lib/hooks'
-import { useT } from '../settings'
+import { promptInstall, useInstallPrompt } from '../lib/installPrompt'
+import { isIos, isStandalone } from '../lib/platform'
+import { useSettings, useT } from '../settings'
 
-interface InstallPromptEvent extends Event {
-  prompt: () => Promise<void>
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
-}
-
-// beforeinstallprompt can fire before React mounts, so capture it at module load.
-let deferred: InstallPromptEvent | null = null
-const listeners = new Set<() => void>()
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault()
-  deferred = e as InstallPromptEvent
-  listeners.forEach((l) => l())
-})
-window.addEventListener('appinstalled', () => {
-  deferred = null
-  listeners.forEach((l) => l())
-})
-
-const subscribe = (l: () => void) => {
-  listeners.add(l)
-  return () => listeners.delete(l)
-}
-
-const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true
-const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
-
-/** "Install BhooPal" card for the home screen (Android prompt, or instructions on iPhone). */
+/**
+ * "Install BhooPal" card for the home screen (Android prompt, or instructions on iPhone): the once-a-session reminder
+ * after the farmer said "Not now" to the full InstallScreen, and the only nudge on a computer.
+ */
 export function InstallCard() {
   const { t } = useT()
-  const prompt = useSyncExternalStore(subscribe, () => deferred)
+  const { settings } = useSettings()
+  const { prompt } = useInstallPrompt()
   const [dismissed, setDismissed] = useState(() => sessionStorage.getItem('bhoopal.installDismissed') === '1')
 
-  if (dismissed || isStandalone() || (!prompt && !isIos())) return null
+  if (dismissed || isStandalone() || settings.installedAt !== undefined || (!prompt && !isIos())) return null
 
   const dismiss = () => {
     sessionStorage.setItem('bhoopal.installDismissed', '1')
@@ -52,9 +32,7 @@ export function InstallCard() {
         {prompt && (
           <button
             onClick={async () => {
-              await prompt.prompt()
-              await prompt.userChoice
-              deferred = null
+              await promptInstall()
               dismiss()
             }}
             className="mt-2 inline-flex items-center gap-2 rounded-lg bg-brand-700 px-3 py-2 text-sm font-semibold text-white"

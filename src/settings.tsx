@@ -18,11 +18,17 @@ export interface Settings {
   photoConsent: boolean
   /** Morning weather message and official warnings by push notification. */
   alerts: boolean
+  /** When the farmer closed the "add to home screen" screen (Not now, or Continue after installing). */
+  installDismissedAt?: number
+  /** When Android reported BhooPal installed (install dialog accepted, appinstalled, or getInstalledRelatedApps). */
+  installedAt?: number
 }
 
 const DEFAULTS: Settings = { lang: null, onboarded: false, crops: [], autoSpeak: false, photoConsent: false, alerts: false }
 
 const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.length < 60).slice(0, 30) : undefined)
+/** A saved moment (ms since 1970), or nothing. */
+const when = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined)
 
 /** Saved settings, checked field by field: a corrupt or hand-edited value must never blank the app. */
 export function load(): Settings {
@@ -46,6 +52,8 @@ export function load(): Settings {
     autoSpeak: saved.autoSpeak === true,
     photoConsent: saved.photoConsent === true,
     alerts: saved.alerts === true,
+    installDismissedAt: when(saved.installDismissedAt),
+    installedAt: when(saved.installedAt),
   }
 }
 

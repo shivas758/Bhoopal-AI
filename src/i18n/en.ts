@@ -46,6 +46,21 @@ export const en = {
   'pwa.installBody': 'Add it to your home screen. Opens like an app and uses little data.',
   'pwa.install': 'Install',
   'pwa.iosHint': "Tap the Share button, then 'Add to Home Screen'.",
+  'install.title': 'Add BhooPal to your home screen',
+  'install.why': 'Opens with one tap, like an app. Works in the field with little or no internet.',
+  'install.button': 'Install BhooPal',
+  'install.free': 'Free, takes a few seconds. No Play Store needed.',
+  'install.androidStep1': 'Tap the ⋮ menu at the top right of Chrome.',
+  'install.androidStep2': "Tap 'Add to Home screen' or 'Install app'.",
+  'install.androidStep3': "Tap 'Install'. BhooPal appears on your home screen.",
+  'install.androidHint': "Don't see it? Tap ⋮ → 'Open in Chrome' first, or look for 'Add to Home screen' in your browser's menu.",
+  'install.iosStep1': 'Tap the Share button, the square with an arrow at the bottom of Safari.',
+  'install.iosStep2': "Scroll down and tap 'Add to Home Screen'.",
+  'install.iosStep3': "Tap 'Add' at the top right.",
+  'install.iosAgain': 'When you open BhooPal from the home screen, pick your language again and log in there.',
+  'install.doneTitle': 'BhooPal is on your home screen',
+  'install.doneBody': 'Open it from there, like any other app. You can close this browser tab.',
+  'install.notNow': 'Not now, continue in browser',
 
   'auth.signup': 'New account',
   'auth.login': 'Log in',
@@ -322,6 +337,7 @@ export const en = {
   'settings.clearConfirm': 'Tap again to confirm',
   'settings.cleared': 'Cleared.',
   'more.title': 'More',
+  'more.install': 'Add BhooPal to home screen',
 }
 
 export type Dict = Record<keyof typeof en, string>

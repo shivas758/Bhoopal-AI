@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useRef } from 'react'
 import { BottomNav } from './components/BottomNav'
+import { InstallScreen, useInstallState } from './components/InstallScreen'
 import { UpdateToast } from './components/PwaPrompts'
 import { PushSync } from './components/PushToggle'
 import { OfflineBanner, Spinner } from './components/ui'
@@ -51,10 +52,22 @@ function Main() {
 export function App() {
   const { settings } = useSettings()
   const session = useSession()
+  const install = useInstallState()
   return (
     <>
-      {/* Language first, so the log-in screen is in the farmer's language; then log in; then the farm questions. */}
-      {!settings.lang ? <Onboarding /> : !session ? <Login /> : settings.onboarded ? <Main /> : <Onboarding />}
+      {/* Language first, so every later screen is in the farmer's language; then, on a phone's browser, once: add BhooPal
+          to the home screen; then log in; then the farm questions. */}
+      {!settings.lang ? (
+        <Onboarding />
+      ) : install !== 'skip' ? (
+        <InstallScreen state={install} />
+      ) : !session ? (
+        <Login />
+      ) : settings.onboarded ? (
+        <Main />
+      ) : (
+        <Onboarding />
+      )}
       {/* Also registers the service worker, so it stays mounted from the very first (onboarding) screen:
           the app is cached for offline use from the farmer's first visit. */}
       <UpdateToast />
