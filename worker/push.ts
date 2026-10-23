@@ -188,7 +188,10 @@ export async function sendMorning(env: Env) {
   await env.DB.prepare(`UPDATE push_subs SET morning_day = ? WHERE id IN (${results.map(() => '?').join(',')})`)
     .bind(day, ...results.map((r) => r.id))
     .run()
-  const outcome = await wake(env, results, { ttl: 2 * 3600, urgency: 'normal', topic: 'morning' })
+  // High urgency: Android holds normal-priority pushes while the phone sleeps (Doze), and the 05:30 message never
+  // reached a sleeping phone (Oct 2026). 6 h TTL: a phone that is off at dawn still gets today's message when it
+  // comes on before 11:30 IST; the text is fetched when shown, so it is never stale.
+  const outcome = await wake(env, results, { ttl: 6 * 3600, urgency: 'high', topic: 'morning' })
   console.log({ event: 'push_morning', batch: results.length, ...outcome })
 }
 
