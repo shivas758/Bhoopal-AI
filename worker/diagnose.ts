@@ -6,6 +6,7 @@ import { spendDailyBudget } from './budget'
 import { callGemini, type GeminiChunk } from './gemini'
 import { record, type MetricEvent } from './metrics'
 import { DIAGNOSE_SCHEMA, diagnoseSystemPrompt } from './prompts'
+import { saveTranscript } from './store'
 import { BadRequest, UpstreamError, apiError, json } from './util'
 
 const MAX_IMAGE_BASE64 = 3_000_000 // ~2.2 MB; the app compresses photos to ~200 KB first
@@ -149,7 +150,15 @@ export function sanitize(raw: Partial<DiagnoseResult> & { crop_matches_farmer?: 
 
 const str = (v: unknown, max = 80) => (typeof v === 'string' && v.length < max ? v : undefined)
 
-export async function handleDiagnose(request: Request, env: Env): Promise<Response> {
+/** The result as text for the owner's "Recent answers" table (#/admin). */
+export function transcriptOf(r: DiagnoseResult) {
+  const lines = [r.crop && `Crop: ${r.crop}${r.crop_mismatch ? ' (not the crop the farmer named)' : ''}`, r.summary]
+  for (const p of r.possible_problems) lines.push(`• ${p.name} [${p.likelihood}]: ${p.signs}`)
+  if (!r.is_plant_image || r.image_quality === 'poor') lines.push(`Retake: ${r.retake_tips}`)
+  return lines.filter(Boolean).join('\n')
+}
+
+export async function handleDiagnose(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   if (!env.GEMINI_API_KEY) return apiError('not_configured', 503)
   const req = (await request.json().catch(() => null)) as Partial<DiagnoseRequest> | null
   if (!req || typeof req.image !== 'string' || !isLang(req.lang) || !MIME_TYPES.has(req.mimeType ?? '')) {
@@ -176,8 +185,29 @@ export async function handleDiagnose(request: Request, env: Env): Promise<Respon
   }
 
   const started = Date.now()
-  const metric = (outcome: string, extra: Partial<MetricEvent> = {}) =>
-    record(env, { kind: 'photo', outcome, lang: req.lang, state: farmer.state, ms: Date.now() - started, ...extra })
+  // The check's id goes back to the app with the result, and comes back with thumbs up/down.
+  const id = crypto.randomUUID().slice(0, 8)
+  const question = [crop && `Crop: ${crop}.`, note].filter(Boolean).join(' ') || '(photo only)'
+  const lang = req.lang
+  const metric = (outcome: string, extra: Partial<MetricEvent> = {}, answer = '') => {
+    const ms = Date.now() - started
+    record(env, { kind: 'photo', outcome, id, lang, state: farmer.state, ms, ...extra })
+    // The owner's "Recent answers" table (#/admin): the farmer's note and the result (never the photo), kept 7 days.
+    ctx.waitUntil(
+      saveTranscript(env.DB, {
+        kind: 'photo',
+        qid: id,
+        lang,
+        state: farmer.state,
+        district: farmer.district,
+        model: extra.model,
+        outcome,
+        question,
+        answer,
+        ms,
+      }),
+    )
+  }
 
   // Photo checks have their own daily share, so they can't use up the whole free AI quota.
   const budget = await spendDailyBudget(env, 'photo', request)
@@ -201,15 +231,19 @@ export async function handleDiagnose(request: Request, env: Env): Promise<Respon
     const output = candidate?.content?.parts?.find((p) => p.text && !p.thought)?.text
     try {
       if (!output || candidate?.finishReason === 'MAX_TOKENS') throw new Error(candidate?.finishReason ?? 'no text')
-      const result = sanitize(JSON.parse(output), Boolean(crop))
-      metric('answered', {
-        model,
-        finish: candidate?.finishReason,
-        calls: attempt + 1,
-        detail: [result.image_quality, result.possible_problems.map((p) => p.likelihood).join('/'), result.crop_mismatch && 'mismatch']
-          .filter(Boolean)
-          .join(' '),
-      })
+      const result: DiagnoseResult = { ...sanitize(JSON.parse(output), Boolean(crop)), id }
+      metric(
+        'answered',
+        {
+          model,
+          finish: candidate?.finishReason,
+          calls: attempt + 1,
+          detail: [result.image_quality, result.possible_problems.map((p) => p.likelihood).join('/'), result.crop_mismatch && 'mismatch']
+            .filter(Boolean)
+            .join(' '),
+        },
+        transcriptOf(result),
+      )
       return json(result)
     } catch (err) {
       console.warn(`diagnose: ${model} gave no usable JSON (${err instanceof Error ? err.message : String(err)})`)

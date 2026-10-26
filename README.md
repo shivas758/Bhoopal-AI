@@ -27,6 +27,8 @@ Farmers log in with a mobile number and a password (`worker/auth.ts`, `src/pages
 
 `/#/admin` (not linked from the app, English only) shows sign-ups and active accounts per day, questions and photo checks per day, a per-account table (joined, last seen, use in the window), push subscriptions by state and language and, from Analytics Engine, the AI's outcomes, models, languages and states with thumbs up/down. It opens with the `ADMIN_TOKEN` secret (pasted once; the browser remembers it), not with a farmer account, because the password reset has no OTP. Without the secret the page and `GET /api/admin/stats` are a 404. The AI section needs `CF_ANALYTICS_TOKEN`, a Cloudflare API token with _Account Analytics: Read_ (dash.cloudflare.com → My Profile → API Tokens → Create Token → Custom); until it is set, the page says so and shows the rest. The app reports "opened today" once a day per logged-in phone (`POST /api/seen`).
 
+**Recent answers** (`GET /api/admin/answers`, the `transcripts` table, migration 0005): every question and its answer, and every photo check's note and result (never the photo), with language, state, district, model, outcome, time taken and the farmer's thumbs up/down. No phone number is stored with them, and the 8 PM cron deletes rows older than 7 days (`TRANSCRIPT_DAYS` in `worker/store.ts`). The page filters by kind, thumbs and language, searches a phrase, and pages back with `before`. A chat answer's id is a hash of the question, so a thumb lands on the newest answer to those exact words; a photo check gets a random id (`DiagnoseResult.id`). The log-in and photo consent screens tell farmers about the 7 days.
+
 ## Promo video
 
 A 9:16 Telugu explainer built with Remotion lives in [`video/`](video/README.md) (own `npm install`; the phone screens are rebuilt from the app's pages, the script and timings are in `video/src/scenes.ts`).
@@ -46,21 +48,22 @@ A 9:16 Telugu explainer built with Remotion lives in [`video/`](video/README.md)
 
 ### API
 
-| Route                                           | What                                                                                                            | Limit (per IP per minute) |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| `GET /api/health`                               | Keys configured, version, and the last upstream probe; **503** when both price sources are down                 | –                         |
-| `GET /api/weather?lat&lon`                      | MET forecast on a 0.05° grid; India only                                                                        | 60 (`DATA_LIMITER`)       |
-| `GET /api/districts?state`                      | District list (Agmarknet names)                                                                                 | 60 (`DATA_LIMITER`)       |
-| `GET /api/prices?commodity&state&district`      | Latest price per mandi, grouped by product form, with MSP                                                       | 60 (`PRICES_LIMITER`)     |
-| `POST /api/chat`                                | Server-sent events: `text`, `tool`, `meta` (model, answer id), `cut`, `reset`, `error` (with `retryAt`), `done` | 20 (`CHAT_LIMITER`)       |
-| `POST /api/diagnose`                            | Photo check (JSON)                                                                                              | 30 (`PHOTO_LIMITER`)      |
-| `POST /api/feedback`                            | Thumbs up/down on an answer or photo check (to Analytics Engine)                                                | 60 (`DATA_LIMITER`)       |
-| `GET /api/alerts?lang&state&district[&lat&lon]` | Active official warnings for the district (LGD code) or, with GPS, the mandal outline the farm is in            | 60 (`DATA_LIMITER`)       |
-| `GET /api/push/key`                             | Public VAPID key the app subscribes with                                                                        | –                         |
-| `POST /api/push/subscribe` / `unsubscribe`      | Turn the morning message on (endpoint, language, state, district, GPS on a 0.05° grid) or off (row deleted)     | 60 (`DATA_LIMITER`)       |
-| `POST /api/push/message`                        | What a woken phone shows: an official warning if there is one, else today's forecast and advice                 | 60 (`DATA_LIMITER`)       |
-| `POST /api/seen`                                | "This logged-in phone opened the app today" (a count for the owner's analytics page)                            | 60 (`DATA_LIMITER`)       |
-| `GET /api/admin/stats?days`                     | The owner's analytics page (`Authorization: Bearer <ADMIN_TOKEN>`); 404 when no token is configured             | 30 (`AUTH_LIMITER`)       |
+| Route                                            | What                                                                                                            | Limit (per IP per minute) |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `GET /api/health`                                | Keys configured, version, and the last upstream probe; **503** when both price sources are down                 | –                         |
+| `GET /api/weather?lat&lon`                       | MET forecast on a 0.05° grid; India only                                                                        | 60 (`DATA_LIMITER`)       |
+| `GET /api/districts?state`                       | District list (Agmarknet names)                                                                                 | 60 (`DATA_LIMITER`)       |
+| `GET /api/prices?commodity&state&district`       | Latest price per mandi, grouped by product form, with MSP                                                       | 60 (`PRICES_LIMITER`)     |
+| `POST /api/chat`                                 | Server-sent events: `text`, `tool`, `meta` (model, answer id), `cut`, `reset`, `error` (with `retryAt`), `done` | 20 (`CHAT_LIMITER`)       |
+| `POST /api/diagnose`                             | Photo check (JSON)                                                                                              | 30 (`PHOTO_LIMITER`)      |
+| `POST /api/feedback`                             | Thumbs up/down on an answer or photo check (to Analytics Engine)                                                | 60 (`DATA_LIMITER`)       |
+| `GET /api/alerts?lang&state&district[&lat&lon]`  | Active official warnings for the district (LGD code) or, with GPS, the mandal outline the farm is in            | 60 (`DATA_LIMITER`)       |
+| `GET /api/push/key`                              | Public VAPID key the app subscribes with                                                                        | –                         |
+| `POST /api/push/subscribe` / `unsubscribe`       | Turn the morning message on (endpoint, language, state, district, GPS on a 0.05° grid) or off (row deleted)     | 60 (`DATA_LIMITER`)       |
+| `POST /api/push/message`                         | What a woken phone shows: an official warning if there is one, else today's forecast and advice                 | 60 (`DATA_LIMITER`)       |
+| `POST /api/seen`                                 | "This logged-in phone opened the app today" (a count for the owner's analytics page)                            | 60 (`DATA_LIMITER`)       |
+| `GET /api/admin/stats?days`                      | The owner's analytics page (`Authorization: Bearer <ADMIN_TOKEN>`); 404 when no token is configured             | 30 (`AUTH_LIMITER`)       |
+| `GET /api/admin/answers?kind&vote&lang&q&before` | The kept questions and answers (7 days), newest first, 50 per page; same token                                  | 30 (`AUTH_LIMITER`)       |
 
 POST routes accept only `application/json`, reject `Sec-Fetch-Site: cross-site`, and cap bodies at 64 KB (chat) / 4 MB (photo). Installed phones keep old app bundles, so wire changes must be additive (see [RELEASE.md](RELEASE.md)).
 
@@ -73,7 +76,7 @@ POST routes accept only `application/json`, reject `Sec-Fetch-Site: cross-site`,
 - **Backup AI** (`worker/backupAi.ts`): when every Gemini model is resting, price questions get the instant price answer, weather questions a forecast-and-advice answer (`worker/forecastText.ts`, no AI), and anything else Workers AI `@cf/google/gemma-4-26b-a4b-it` with thinking off (~7 s, ~10–40 neurons; at most 220 answers a day of the free 10,000 neurons). It gets the looked-up data but no tools, must not name medicines or doses, and the app marks its answers "backup AI". Diagnose stays Gemini-only.
 - **Weather words and advice rules** live in `shared/advice.ts` and `shared/weatherText/` (one file per language), used by both the app and the Worker.
 - **Workers Cache** serves repeated `GET /api/weather`, `/api/districts` and `/api/prices` from Cloudflare's cache for their `max-age`.
-- **Analytics Engine** (`STATS`, dataset `bhoopal_events`): one point per answer, photo check and thumbs up/down (model, finish reason, language, state, outcome; never the farmer's text). The analytics page reads it through the SQL API (`worker/admin.ts`); it keeps about 3 months. Logs are structured JSON with the deployed version id.
+- **Analytics Engine** (`STATS`, dataset `bhoopal_events`): one point per answer, photo check and thumbs up/down (model, finish reason, language, state, outcome; never the farmer's text, which lives only in D1's `transcripts` for 7 days). The analytics page reads it through the SQL API (`worker/admin.ts`); it keeps about 3 months. Logs are structured JSON with the deployed version id.
 - **Monitoring:** point a free uptime monitor (e.g. UptimeRobot, 5-minute checks) at `/api/health` (it returns 503 when prices are down) and `/api/weather?lat=17.39&lon=78.49`. Never at `/api/chat` or `/api/diagnose`, which cost AI quota.
 
 ## Setup
@@ -118,7 +121,7 @@ Before going live, edit `USER_AGENT` in `wrangler.jsonc` to include your site UR
 - **Gemini free tier = 20 requests per day per model** (measured Oct 2026; check https://ai.dev/rate-limit).
   - Most questions use 1 request, because the Worker looks prices, weather and schemes up first. A question needing a lookup the Worker didn't foresee uses 2–3 (at most 2 tool rounds); a retry after a model goes quiet can make it 4. Price buttons and the Home price card use none.
   - The Worker rotates through a pool of models (`GEMINI_MODELS` in `wrangler.jsonc`, best first) and rests each one until its quota resets at midnight Pacific time (12:30/1:30 PM IST). When all are resting, the app tells the farmer the time the AI is back and offers the Kisan Call Centre. That gives roughly **60–90 farmer questions per day in total**: fine for a pilot, not for a public launch.
-  - Every answer is logged as `{event: 'chat', outcome, model, finish, calls, toolRounds, …}` (the id is a hash, never the farmer's text). An overloaded model sometimes fails in the middle of a streamed answer; the Worker then restarts the answer once on another model (`reset` event).
+  - Every answer is logged as `{event: 'chat', outcome, model, finish, calls, toolRounds, …}` (the id is a hash, never the farmer's text; the text itself goes only to the `transcripts` table for the owner's page, 7 days). An overloaded model sometimes fails in the middle of a streamed answer; the Worker then restarts the answer once on another model (`reset` event).
   - For real use, enable billing on the Google AI Studio project. No code changes are needed. Flash models cost a fraction of a rupee per question, and paid-tier prompts are not used to train Google's models (better for farmers' privacy).
   - The Worker also rate-limits each IP (`CHAT_LIMITER`, `PHOTO_LIMITER`) and sends only the last 12 messages.
   - Pool order comes from testing on real farmer questions: `gemini-3.6-flash` was most accurate. `gemini-3.8-flash` is excluded because it often stopped mid-answer after tool calls. Older models had to be told explicitly which pesticides are banned (see `BANNED_PESTICIDES` in `worker/prompts.ts`).
@@ -148,7 +151,7 @@ Before going live, edit `USER_AGENT` in `wrangler.jsonc` to include your site UR
 - **Crop matching:** processed products (dal, oil, oil cake, flour) and by-products (cotton seed, spring onion) are kept apart from the raw crop, so farmers aren't shown the wrong product's price.
 - **Schemes page:** covers central schemes, plus a link to the farmer's state agriculture portal (`portal` in `shared/stateSchemes.ts`; no state amounts). Links are official sites checked by hand; it warns about agents and OTP fraud and shows a "last checked" date. Update `shared/schemes.ts`, the portals and `SCHEMES_CHECKED` periodically.
 - **Sharing:** a shared photo check starts with the experimental warning and the Kisan Call Centre number, and never includes medicine names.
-- **Privacy notice** (Settings and the photo consent screen): says that free-tier Gemini inputs, photos included, may be read by Google reviewers and used to improve Google products, that server logs are kept about 3 days, and that location is rounded to about 1 km.
+- **Privacy notice** (the log-in screen and the photo consent screen): says that free-tier Gemini inputs, photos included, may be read by Google reviewers and used to improve Google products, and that questions and answers (for a photo check, the note and the result, not the photo) are kept 7 days without the phone number for the owner's "Recent answers" page.
 
 ## Before launch: please verify
 

@@ -320,7 +320,7 @@ export function Diagnose() {
               vote={vote ?? undefined}
               onVote={(v) => {
                 setVote(v)
-                void api.feedback({ kind: 'photo', vote: v, lang })
+                void api.feedback({ kind: 'photo', vote: v, lang, id: result.id })
               }}
             />
             <button onClick={reset} className={secondaryButton}>

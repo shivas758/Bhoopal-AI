@@ -1,5 +1,5 @@
 import { isLang, type FeedbackRequest } from '../shared/types'
-import { handleAdminStats } from './admin'
+import { handleAdminAnswers, handleAdminStats } from './admin'
 import { handleLogin, handleLogout, handleReset, handleSeen, handleSignup, sessionPhone } from './auth'
 import { handleChat } from './chat'
 import { runCron } from './cron'
@@ -8,7 +8,7 @@ import { record } from './metrics'
 import { handleDistricts, handlePrices } from './prices'
 import { handlePushKey, handlePushMessage, handleSubscribe, handleUnsubscribe } from './push'
 import { handleAlerts } from './sachet'
-import { noteActivity, readStatus } from './store'
+import { noteActivity, readStatus, voteTranscript } from './store'
 import { BadRequest, UpstreamError, apiError, json } from './util'
 import { handleWeather } from './weather'
 
@@ -67,13 +67,16 @@ async function handleHealth(env: Env): Promise<Response> {
   )
 }
 
-async function handleFeedback(request: Request, env: Env): Promise<Response> {
+async function handleFeedback(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const body = (await request.json().catch(() => null)) as Partial<FeedbackRequest> | null
   if (!body || (body.kind !== 'chat' && body.kind !== 'photo') || (body.vote !== 'up' && body.vote !== 'down') || !isLang(body.lang)) {
     throw new BadRequest('invalid feedback')
   }
   const short = (v: unknown, max: number) => (typeof v === 'string' && v.length <= max ? v : undefined)
-  record(env, { kind: 'feedback', outcome: body.vote, detail: body.kind, id: short(body.id, 16), model: short(body.model, 60), lang: body.lang })
+  const id = short(body.id, 16)
+  record(env, { kind: 'feedback', outcome: body.vote, detail: body.kind, id, model: short(body.model, 60), lang: body.lang })
+  // Shown next to the answer on the owner's analytics page.
+  if (id) ctx.waitUntil(voteTranscript(env.DB, body.kind, id, body.vote))
   return new Response(null, { status: 204 })
 }
 
@@ -113,7 +116,7 @@ export default {
           const phone = await sessionPhone(request, env)
           if (!phone) return apiError('unauthorized', 401)
           ctx.waitUntil(noteActivity(env.DB, phone, 'photos'))
-          return await handleDiagnose(request, env)
+          return await handleDiagnose(request, env, ctx)
         }
         case 'POST /api/seen':
           if (!(await allowed(env.DATA_LIMITER, request))) return apiError('rate_limited', 429)
@@ -122,6 +125,9 @@ export default {
           // The owner's analytics page; the log-in limiter also slows down anyone guessing the token.
           if (!(await allowed(env.AUTH_LIMITER, request))) return apiError('rate_limited', 429)
           return await handleAdminStats(request, env)
+        case 'GET /api/admin/answers':
+          if (!(await allowed(env.AUTH_LIMITER, request))) return apiError('rate_limited', 429)
+          return await handleAdminAnswers(request, env)
         case 'POST /api/auth/signup':
           if (!(await allowed(env.AUTH_LIMITER, request))) return apiError('rate_limited', 429)
           return rejectPost(request, url.pathname) ?? (await handleSignup(request, env))
@@ -146,7 +152,7 @@ export default {
           return rejectPost(request, url.pathname) ?? (await handlePushMessage(request, env))
         case 'POST /api/feedback':
           if (!(await allowed(env.DATA_LIMITER, request))) return apiError('rate_limited', 429)
-          return rejectPost(request, url.pathname) ?? (await handleFeedback(request, env))
+          return rejectPost(request, url.pathname) ?? (await handleFeedback(request, env, ctx))
       }
       return apiError('bad_request', 404)
     } catch (err) {

@@ -267,6 +267,8 @@ export interface DiagnoseResult {
   retake_tips: string
   /** The photo seems to show a different crop than the farmer named; likelihoods are capped at low. */
   crop_mismatch?: boolean
+  /** The check's id, sent back with thumbs up/down (older app bundles don't send it). */
+  id?: string
 }
 
 // ---- the owner's analytics page (GET /api/admin/stats, worker/admin.ts, src/pages/Admin.tsx) -------------------
@@ -317,6 +319,33 @@ export interface AdminAiStats {
   states: { kind: string; state: string; n: number }[]
   /** Why the section is empty (the SQL API failed or isn't configured). */
   error?: string
+}
+
+/** One kept question and answer (GET /api/admin/answers, the `transcripts` table): 7 days, no phone number. */
+export interface AdminAnswer {
+  id: number
+  created: number
+  kind: 'chat' | 'photo'
+  lang: string
+  state: string | null
+  district: string | null
+  /** "template", "cache:<model>", a model id, or null when nothing answered. */
+  model: string | null
+  outcome: string
+  /** For a photo check: the crop the farmer named and their note, never the photo. */
+  question: string
+  /** Empty when there was no answer. */
+  answer: string
+  vote: Vote | null
+  ms: number | null
+}
+
+export interface AdminAnswers {
+  generated: number
+  /** Newest first. */
+  rows: AdminAnswer[]
+  /** Older rows exist: ask again with `before` = the last row's `created`. */
+  more: boolean
 }
 
 export interface AdminStats {

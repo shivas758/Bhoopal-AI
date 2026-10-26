@@ -1,10 +1,10 @@
-import { KeyRound, LogOut, RefreshCw } from 'lucide-react'
+import { KeyRound, LogOut, RefreshCw, Search, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { formatPhone } from '../../shared/account'
 import { dateTimeFormat } from '../../shared/time'
-import { LANG_INFO, isLang, type AdminAiStats, type AdminDay, type AdminStats, type AdminUser } from '../../shared/types'
+import { LANGS, LANG_INFO, isLang, type AdminAiStats, type AdminAnswer, type AdminDay, type AdminStats, type AdminUser, type Lang } from '../../shared/types'
 import { Card, Notice, Segmented, Spinner, inputClass, primaryButton, smallButton } from '../components/ui'
-import { AdminError, fetchAdminStats, forgetToken, loadToken, saveToken } from '../lib/admin'
+import { AdminError, fetchAdminAnswers, fetchAdminStats, forgetToken, loadToken, saveToken } from '../lib/admin'
 
 // The owner's analytics page (#/admin): who signed up, who comes back, what they use and how the AI is doing.
 // English only, no farmer log-in and not linked from the app: it opens with the ADMIN_TOKEN secret, which this
@@ -146,7 +146,7 @@ export function Admin() {
         {/* While a new window loads the old numbers stay, dimmed, so nothing jumps. */}
         {stats && (
           <div className={`flex flex-col gap-4 transition-opacity ${loading ? 'opacity-60' : ''}`}>
-            <Dashboard stats={stats} />
+            <Dashboard stats={stats} token={token} refresh={attempt} />
           </div>
         )}
       </main>
@@ -195,7 +195,7 @@ function TokenScreen({ error, onSubmit }: { error: AdminError | null; onSubmit: 
 
 // ---- the dashboard -------------------------------------------------------------------------------------------
 
-function Dashboard({ stats }: { stats: AdminStats }) {
+function Dashboard({ stats, token, refresh }: { stats: AdminStats; token: string; refresh: number }) {
   const { totals, daily, users, push, ai, days } = stats
   const sum = (key: Exclude<keyof AdminDay, 'day'>) => daily.reduce((s, d) => s + d[key], 0)
   const labels = daily.map((d) => d.day)
@@ -231,6 +231,7 @@ function Dashboard({ stats }: { stats: AdminStats }) {
 
       <UsersTable users={users} total={totals.users} days={days} />
       <AiSection ai={ai} days={labels} />
+      <AnswersSection token={token} refresh={refresh} />
 
       <Card>
         <h2 className="mb-2 font-bold">Morning message</h2>
@@ -396,6 +397,206 @@ function AiSection({ ai, days }: { ai?: AdminAiStats; days: string[] }) {
         </Card>
       </div>
     </>
+  )
+}
+
+// ---- recent answers --------------------------------------------------------------------------------------------
+
+type KindFilter = 'all' | 'chat' | 'photo'
+type VoteFilter = 'all' | 'down' | 'up'
+const KIND_OPTIONS: { value: KindFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'chat', label: 'Questions' },
+  { value: 'photo', label: 'Photo checks' },
+]
+const VOTE_OPTIONS: { value: VoteFilter; label: string }[] = [
+  { value: 'all', label: 'Any' },
+  { value: 'down', label: 'Thumbs down' },
+  { value: 'up', label: 'Thumbs up' },
+]
+const ANSWERS_PAGE = 50
+/** Chat and photo outcomes that gave the farmer an answer (the same set as the Worker's). */
+const ANSWERED = new Set(['answered', 'template', 'cached', 'resting_template', 'backup'])
+const langName = (lang: string) => (isLang(lang) ? LANG_INFO[lang].english : lang)
+
+/** The questions and answers the Worker keeps for 7 days (no phone numbers), newest first, with filters and a search. */
+function AnswersSection({ token, refresh }: { token: string; refresh: number }) {
+  const [kind, setKind] = useState<KindFilter>('all')
+  const [vote, setVote] = useState<VoteFilter>('all')
+  const [lang, setLang] = useState<Lang | ''>('')
+  const [typed, setTyped] = useState('')
+  const [q, setQ] = useState('')
+  const [rows, setRows] = useState<AdminAnswer[]>([])
+  const [more, setMore] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [error, setError] = useState<AdminError | null>(null)
+  const filter = {
+    kind: kind === 'all' ? undefined : kind,
+    vote: vote === 'all' ? undefined : vote,
+    lang: lang || undefined,
+    q: q || undefined,
+    limit: ANSWERS_PAGE,
+  }
+
+  useEffect(() => {
+    let live = true
+    setLoading(true)
+    setError(null)
+    fetchAdminAnswers(token, {
+      kind: kind === 'all' ? undefined : kind,
+      vote: vote === 'all' ? undefined : vote,
+      lang: lang || undefined,
+      q: q || undefined,
+      limit: ANSWERS_PAGE,
+    })
+      .then((a) => {
+        if (!live) return
+        setRows(a.rows)
+        setMore(a.more)
+      })
+      .catch((err: unknown) => live && setError(err instanceof AdminError ? err : new AdminError('server')))
+      .finally(() => live && setLoading(false))
+    return () => {
+      live = false
+    }
+  }, [token, kind, vote, lang, q, refresh])
+
+  const loadMore = async () => {
+    const last = rows.at(-1)
+    if (!last || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const a = await fetchAdminAnswers(token, { ...filter, before: last.created })
+      setRows((prev) => [...prev, ...a.rows])
+      setMore(a.more)
+    } catch (err) {
+      setError(err instanceof AdminError ? err : new AdminError('server'))
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
+  const filtered = kind !== 'all' || vote !== 'all' || lang || q
+  return (
+    <Card>
+      <h2 className="mb-1 font-bold">Recent answers</h2>
+      <p className="mb-3 text-sm text-stone-600">
+        Every question and photo check of the last 7 days with what the AI said, newest first. No phone numbers; for a photo check, the farmer's note and the
+        result, never the photo. A thumb appears when the farmer taps one.
+      </p>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="w-full max-w-xs sm:w-auto">
+          <Segmented value={kind} options={KIND_OPTIONS} onChange={setKind} />
+        </div>
+        <div className="w-full max-w-xs sm:w-auto">
+          <Segmented value={vote} options={VOTE_OPTIONS} onChange={setVote} />
+        </div>
+        <select className={`${inputClass} w-auto py-2 text-sm`} value={lang} onChange={(e) => setLang(e.target.value as Lang | '')} aria-label="Language">
+          <option value="">All languages</option>
+          {LANGS.map((l) => (
+            <option key={l} value={l}>
+              {LANG_INFO[l].english}
+            </option>
+          ))}
+        </select>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            setQ(typed.trim())
+          }}
+          className="flex gap-2"
+        >
+          <input
+            className={`${inputClass} max-w-56 py-2 text-sm`}
+            placeholder="A word in the question or answer"
+            aria-label="Search the questions and answers"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+          />
+          <button type="submit" className={smallButton}>
+            <Search className="size-4" aria-hidden /> Search
+          </button>
+        </form>
+      </div>
+      {error && (
+        <Notice tone="danger" alert>
+          {error.code === 'server' ? 'The server could not read the answers. Is migration 0005 applied to this database?' : errorText(error)}
+        </Notice>
+      )}
+      {loading && !rows.length ? (
+        <Spinner label="Loading…" />
+      ) : rows.length === 0 ? (
+        !error && <p className="py-4 text-center text-sm text-stone-500">{filtered ? 'Nothing matches.' : 'No questions in the last 7 days.'}</p>
+      ) : (
+        <ul className={`transition-opacity ${loading ? 'opacity-60' : ''}`}>
+          {rows.map((r) => (
+            <AnswerRow key={r.id} row={r} />
+          ))}
+        </ul>
+      )}
+      {more && (
+        <div className="mt-3 flex justify-center">
+          <button onClick={loadMore} disabled={loadingMore} className={smallButton}>
+            {loadingMore ? 'Loading…' : 'Older answers'}
+          </button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function AnswerRow({ row: r }: { row: AdminAnswer }) {
+  const [open, setOpen] = useState(false)
+  const sep = <span aria-hidden>·</span>
+  const long = r.answer.length > 400 || r.answer.split('\n').length > 6
+  return (
+    <li className="border-t border-stone-100 py-3 first:border-t-0 first:pt-0">
+      <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-stone-500">
+        <span>{dateTimeIst(r.created)}</span>
+        {sep}
+        <span>{r.kind === 'photo' ? 'Photo check' : 'Question'}</span>
+        {sep}
+        <span>{langName(r.lang)}</span>
+        {r.state && (
+          <>
+            {sep}
+            <span>{[r.district, r.state].filter(Boolean).join(', ')}</span>
+          </>
+        )}
+        {sep}
+        <span>{r.model || '–'}</span>
+        {sep}
+        <span className={ANSWERED.has(r.outcome) ? '' : 'font-medium text-red-700'}>{r.outcome}</span>
+        {r.ms !== null && (
+          <>
+            {sep}
+            <span>{(r.ms / 1000).toFixed(1)} s</span>
+          </>
+        )}
+        {r.vote && (
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${r.vote === 'up' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}
+          >
+            {r.vote === 'up' ? <ThumbsUp className="size-3.5" aria-hidden /> : <ThumbsDown className="size-3.5" aria-hidden />}
+            {r.vote === 'up' ? 'Thumbs up' : 'Thumbs down'}
+          </span>
+        )}
+      </p>
+      <p className="mt-1 font-medium break-words whitespace-pre-wrap">{r.question}</p>
+      {r.answer ? (
+        <>
+          <p className={`mt-1 text-sm break-words whitespace-pre-wrap text-stone-800 ${long && !open ? 'line-clamp-4' : ''}`}>{r.answer}</p>
+          {long && (
+            <button onClick={() => setOpen((o) => !o)} className="mt-1 text-sm font-medium text-green-700">
+              {open ? 'Show less' : 'Show the whole answer'}
+            </button>
+          )}
+        </>
+      ) : (
+        <p className="mt-1 text-sm text-stone-500 italic">No answer was sent.</p>
+      )}
+    </li>
   )
 }
 

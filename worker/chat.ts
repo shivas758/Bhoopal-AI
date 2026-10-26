@@ -29,7 +29,7 @@ import {
   type GeminiPart,
 } from './gemini'
 import { record, type MetricEvent } from './metrics'
-import { readAnswer, writeAnswer } from './store'
+import { readAnswer, saveTranscript, writeAnswer } from './store'
 import { detectIntents } from './intents'
 import { createOutputFilter } from './outputFilter'
 import { priceAnswer } from './priceAnswer'
@@ -214,15 +214,32 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
     return send({ type: 'text', text })
   })
   const started = Date.now()
-  const metric = (outcome: string, extra: Partial<MetricEvent> = {}) =>
-    record(env, { kind: 'chat', outcome, id: qid, lang: req.lang, state: state?.id, ms: Date.now() - started, ...extra })
+  const metric = (outcome: string, extra: Partial<MetricEvent> = {}, answer = sentText) => {
+    const ms = Date.now() - started
+    record(env, { kind: 'chat', outcome, id: qid, lang: req.lang, state: state?.id, ms, ...extra })
+    // The owner's "Recent answers" table (#/admin): the question and the answer, kept 7 days, without the phone number.
+    ctx.waitUntil(
+      saveTranscript(env.DB, {
+        kind: 'chat',
+        qid,
+        lang: req.lang,
+        state: state?.id,
+        district: req.district,
+        model: extra.model,
+        outcome,
+        question,
+        answer,
+        ms,
+      }),
+    )
+  }
 
   /** An answer that needs no AI: the instant price card, a weather summary or a cached answer. */
   const answerNow = async (text: string, model: string, outcome: string, extra: Partial<MetricEvent> = {}) => {
     await send({ type: 'meta', model, id: qid })
     await send({ type: 'text', text })
     await send({ type: 'done' })
-    metric(outcome, { model, ...extra })
+    metric(outcome, { model, ...extra }, text)
     return true
   }
 

@@ -1,4 +1,13 @@
-import type { AdminAiDay, AdminAiStats, AdminDay, AdminStats, AdminUser } from '../shared/types'
+import {
+  isLang,
+  type AdminAiDay,
+  type AdminAiStats,
+  type AdminAnswer,
+  type AdminAnswers,
+  type AdminDay,
+  type AdminStats,
+  type AdminUser,
+} from '../shared/types'
 import { apiError, json, sha256Hex } from './util'
 
 // The owner's analytics page (#/admin in the app): accounts, activity and push subscriptions from D1, and the
@@ -10,6 +19,8 @@ const DEFAULT_DAYS = 30
 // Analytics Engine keeps about 3 months.
 const MAX_DAYS = 90
 const MAX_USERS = 500
+const DEFAULT_ANSWERS = 50
+const MAX_ANSWERS = 200
 const IST_MS = 5.5 * 3600_000
 const DAY_MS = 86400_000
 const AE_TIMEOUT_MS = 10_000
@@ -44,6 +55,56 @@ export async function handleAdminStats(request: Request, env: Env): Promise<Resp
   const now = Date.now()
   const [store, ai] = await Promise.all([readStore(env.DB, days, now), readAi(env, days, now)])
   return json({ generated: now, days, version: env.CF_VERSION_METADATA?.id, ...store, ...(ai ? { ai } : {}) } satisfies AdminStats)
+}
+
+/**
+ * GET /api/admin/answers: the kept questions and answers (the `transcripts` table, 7 days), newest first.
+ * Filters: kind (chat | photo), vote (up | down), lang, q (a phrase in the question or answer); `before` (ms) pages
+ * further back and `limit` is at most 200.
+ */
+export async function handleAdminAnswers(request: Request, env: Env): Promise<Response> {
+  if (!env.ADMIN_TOKEN) return apiError('bad_request', 404)
+  if (!(await isAdmin(request, env))) return apiError('unauthorized', 401)
+  const p = new URL(request.url).searchParams
+  const where: string[] = []
+  const params: unknown[] = []
+  const kind = p.get('kind')
+  if (kind === 'chat' || kind === 'photo') {
+    where.push('kind = ?')
+    params.push(kind)
+  }
+  const vote = p.get('vote')
+  if (vote === 'up' || vote === 'down') {
+    where.push('vote = ?')
+    params.push(vote)
+  }
+  const lang = p.get('lang')
+  if (lang && isLang(lang)) {
+    where.push('lang = ?')
+    params.push(lang)
+  }
+  const q = (p.get('q') ?? '').trim().slice(0, 100)
+  if (q) {
+    // A phrase, not a pattern: SQL wildcards in it are escaped. LIKE ignores case for ASCII only.
+    const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+    where.push("(question LIKE ? ESCAPE '\\' OR answer LIKE ? ESCAPE '\\')")
+    params.push(pattern, pattern)
+  }
+  const before = Number(p.get('before'))
+  if (Number.isSafeInteger(before) && before > 0) {
+    where.push('created < ?')
+    params.push(before)
+  }
+  const asked = p.get('limit') === null ? DEFAULT_ANSWERS : Number(p.get('limit'))
+  const limit = Number.isInteger(asked) ? Math.min(Math.max(asked, 1), MAX_ANSWERS) : DEFAULT_ANSWERS
+  const sql = `SELECT id, created, kind, lang, state, district, model, outcome, question, answer, vote, ms FROM transcripts${
+    where.length ? ` WHERE ${where.join(' AND ')}` : ''
+  } ORDER BY created DESC, id DESC LIMIT ?`
+  // One row more than asked says whether there is another page.
+  const { results } = await env.DB.prepare(sql)
+    .bind(...params, limit + 1)
+    .all<AdminAnswer>()
+  return json({ generated: Date.now(), rows: results.slice(0, limit), more: results.length > limit } satisfies AdminAnswers)
 }
 
 // ---- D1: accounts, activity, push subscriptions -------------------------------------------------------------

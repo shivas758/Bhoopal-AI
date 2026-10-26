@@ -192,9 +192,70 @@ export function readStatus(db: Db): Promise<Record<string, ServiceStatus>> {
   })
 }
 
+// ---- transcripts (the owner's "Recent answers") ---------------------------------------------------------
+
+/** Questions and answers are kept this long for the owner's analytics page, then the daily cron deletes them. */
+export const TRANSCRIPT_DAYS = 7
+const MAX_TRANSCRIPT_CHARS = 12_000
+
+export interface Transcript {
+  kind: 'chat' | 'photo'
+  /** The answer id the app sends back with thumbs up/down. */
+  qid?: string
+  lang: string
+  state?: string
+  district?: string
+  model?: string
+  outcome: string
+  question: string
+  answer: string
+  ms?: number
+}
+
+/** Keeps a question and its answer for the owner's analytics page (#/admin): no phone number, 7 days. */
+export function saveTranscript(db: Db, t: Transcript, now = Date.now()): Promise<void> {
+  if (!db) return Promise.resolve()
+  return safely('transcript write', undefined, async () => {
+    await db
+      .prepare(
+        'INSERT INTO transcripts (created, kind, qid, lang, state, district, model, outcome, question, answer, vote, ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)',
+      )
+      .bind(
+        now,
+        t.kind,
+        t.qid ?? null,
+        t.lang,
+        t.state ?? null,
+        t.district ?? null,
+        t.model ?? null,
+        t.outcome,
+        t.question.slice(0, MAX_TRANSCRIPT_CHARS),
+        t.answer.slice(0, MAX_TRANSCRIPT_CHARS),
+        t.ms ?? null,
+      )
+      .run()
+  })
+}
+
+/**
+ * Attaches a thumbs up/down to the newest transcript with that answer id. A chat id is a hash of the question,
+ * so two farmers asking the very same words share one: the vote then lands on the most recent answer.
+ */
+export function voteTranscript(db: Db, kind: 'chat' | 'photo', qid: string, vote: 'up' | 'down', now = Date.now()): Promise<void> {
+  if (!db) return Promise.resolve()
+  return safely('transcript vote', undefined, async () => {
+    await db
+      .prepare(
+        'UPDATE transcripts SET vote = ? WHERE id = (SELECT id FROM transcripts WHERE kind = ? AND qid = ? AND created > ? ORDER BY created DESC, id DESC LIMIT 1)',
+      )
+      .bind(vote, kind, qid, now - TRANSCRIPT_DAYS * 86400_000)
+      .run()
+  })
+}
+
 // ---- housekeeping (daily cron) ------------------------------------------------------------------------
 
-/** Deletes expired cache rows, old answers and budgets, snapshots older than ~5 weeks and activity older than ~13 months. */
+/** Deletes expired cache rows, old answers, budgets and transcripts, snapshots older than ~5 weeks and activity older than ~13 months. */
 export function cleanUp(db: Db, now = Date.now()): Promise<void> {
   if (!db) return Promise.resolve()
   const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)
@@ -207,6 +268,7 @@ export function cleanUp(db: Db, now = Date.now()): Promise<void> {
       db.prepare('DELETE FROM prices WHERE date < ?').bind(day(now - 35 * 86400_000)),
       db.prepare('DELETE FROM sessions WHERE expires < ?').bind(now),
       db.prepare('DELETE FROM activity WHERE day < ?').bind(day(now - 400 * 86400_000)),
+      db.prepare('DELETE FROM transcripts WHERE created < ?').bind(now - TRANSCRIPT_DAYS * 86400_000),
     ])
   })
 }

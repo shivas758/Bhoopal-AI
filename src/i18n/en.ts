@@ -82,7 +82,8 @@ export const en = {
   'auth.wrongPassword': 'Wrong password. Please try again.',
   'auth.offline': 'You need internet to log in.',
   'auth.ended': 'Please log in again.',
-  'auth.privacy': 'Your mobile number is used only for logging in. BhooPal never asks for money or OTPs.',
+  'auth.privacy':
+    'Your mobile number is used only for logging in. Questions and answers are kept for 7 days, without your number, to improve BhooPal. BhooPal never asks for money or OTPs.',
 
   'onboard.language': 'Choose your language',
   'onboard.trust': 'Free for every farmer. No OTP, nothing to pay.',
@@ -209,7 +210,7 @@ export const en = {
     'This tool guesses from one photo and can be wrong. The wrong medicine wastes money and can harm your crop. Always confirm with your agriculture officer, KVK or the Kisan Call Centre ({kcc}) before buying any medicine.',
   'diagnose.agree': 'I understand. Continue',
   'diagnose.privacy':
-    'Your photo is sent to Google Gemini (free version), and Google staff may look at it to improve their products. Photograph only the crop, not people or documents.',
+    'Your photo is sent to Google Gemini (free version), and Google staff may look at it to improve their products. Photograph only the crop, not people or documents. The result and your note, not the photo, are kept for 7 days to improve BhooPal.',
   'diagnose.takePhoto': 'Take photo',
   'diagnose.gallery': 'Choose from gallery',
   'diagnose.tips': 'Best results: a close, sharp photo of the affected leaf, stem or fruit in daylight.',
