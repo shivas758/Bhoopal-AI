@@ -64,8 +64,8 @@ describe('the store', () => {
   test('a transcript is written in column order, with long text cut', async () => {
     const { db, calls } = fakeDb()
     await saveTranscript(db, { kind: 'chat', qid: 'abc', lang: 'en', outcome: 'answered', question: 'q', answer: 'x'.repeat(20_000) }, 123)
-    expect(calls[0].sql).toMatch(/^INSERT INTO transcripts \(created, kind, qid, lang, state, district, model, outcome, question, answer, vote, ms\)/)
-    expect(calls[0].params).toEqual([123, 'chat', 'abc', 'en', null, null, null, 'answered', 'q', 'x'.repeat(12_000), null])
+    expect(calls[0].sql).toMatch(/^INSERT INTO transcripts \(created, kind, phone, qid, lang, state, district, model, outcome, question, answer, vote, ms\)/)
+    expect(calls[0].params).toEqual([123, 'chat', null, 'abc', 'en', null, null, null, 'answered', 'q', 'x'.repeat(12_000), null])
   })
 
   test('a thumb goes to the newest answer with that id from the last 7 days', async () => {
@@ -110,13 +110,14 @@ describe('what the Worker keeps', () => {
       method: 'POST',
       body: JSON.stringify({ lang: 'te', state: 'Telangana', district: 'Nalgonda', messages: [{ role: 'user', text: 'How do I make compost at home?' }] }),
     })
-    await (await handleChat(request, env, ctx)).text()
+    await (await handleChat(request, env, ctx, '9876543210')).text()
     await settled()
     const saved = calls.filter((c) => c.sql.startsWith('INSERT INTO transcripts'))
     expect(saved).toHaveLength(1)
     expect(saved[0].params).toEqual([
       expect.any(Number),
       'chat',
+      '9876543210',
       expect.any(String),
       'te',
       'Telangana',
@@ -164,7 +165,7 @@ describe('what the Worker keeps', () => {
       method: 'POST',
       body: JSON.stringify({ image: 'AAAA', mimeType: 'image/jpeg', lang: 'te', state: 'Telangana', crop: 'Tomato', note: 'leaves curling since Monday' }),
     })
-    const res = await handleDiagnose(request, env, ctx)
+    const res = await handleDiagnose(request, env, ctx, '9876543210')
     expect(res.status).toBe(200)
     const body = (await res.json()) as DiagnoseResult
     expect(body.id).toMatch(/^[0-9a-f]{8}$/)
@@ -172,8 +173,8 @@ describe('what the Worker keeps', () => {
     await settled()
     const saved = calls.filter((c) => c.sql.startsWith('INSERT INTO transcripts'))
     expect(saved).toHaveLength(1)
-    const [, kind, qid, lang, state, , model, outcome, question, answer] = saved[0].params
-    expect([kind, qid, lang, state, model, outcome]).toEqual(['photo', body.id, 'te', 'Telangana', 'model-p', 'answered'])
+    const [, kind, phone, qid, lang, state, , model, outcome, question, answer] = saved[0].params
+    expect([kind, phone, qid, lang, state, model, outcome]).toEqual(['photo', '9876543210', body.id, 'te', 'Telangana', 'model-p', 'answered'])
     expect(question).toBe('Crop: Tomato. leaves curling since Monday')
     expect(answer).toBe('Crop: Tomato\nThe leaves show curling.\n• Leaf curl virus [high]: Curled yellow leaves')
     expect(JSON.stringify(saved[0].params)).not.toContain('AAAA')
@@ -218,6 +219,7 @@ describe('GET /api/admin/answers', () => {
     id,
     created: 1_700_000_000_000 + id,
     kind: 'chat',
+    phone: '9876543210',
     lang: 'te',
     state: 'Telangana',
     district: null,
@@ -244,7 +246,7 @@ describe('GET /api/admin/answers', () => {
     expect(body.rows.map((r) => r.id)).toEqual([2, 1])
     expect(body.more).toBe(false)
     expect(calls[0].sql).toBe(
-      'SELECT id, created, kind, lang, state, district, model, outcome, question, answer, vote, ms FROM transcripts ORDER BY created DESC, id DESC LIMIT ?',
+      'SELECT id, created, kind, phone, lang, state, district, model, outcome, question, answer, vote, ms FROM transcripts ORDER BY created DESC, id DESC LIMIT ?',
     )
     expect(calls[0].params).toEqual([51])
   })
@@ -256,9 +258,9 @@ describe('GET /api/admin/answers', () => {
     expect(body.rows.map((r) => r.id)).toEqual([3, 2])
     expect(body.more).toBe(true)
     expect(calls[0].sql).toContain(
-      "WHERE kind = ? AND vote = ? AND lang = ? AND (question LIKE ? ESCAPE '\\' OR answer LIKE ? ESCAPE '\\') AND created < ? ORDER BY created DESC",
+      "WHERE kind = ? AND vote = ? AND lang = ? AND (question LIKE ? ESCAPE '\\' OR answer LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\') AND created < ? ORDER BY created DESC",
     )
-    expect(calls[0].params).toEqual(['photo', 'down', 'te', '%50\\%\\_x%', '%50\\%\\_x%', 1700000000005, 3])
+    expect(calls[0].params).toEqual(['photo', 'down', 'te', '%50\\%\\_x%', '%50\\%\\_x%', '%50\\%\\_x%', 1700000000005, 3])
   })
 
   test('unknown filter values are ignored and the page size is capped', async () => {

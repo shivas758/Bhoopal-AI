@@ -59,8 +59,8 @@ export async function handleAdminStats(request: Request, env: Env): Promise<Resp
 
 /**
  * GET /api/admin/answers: the kept questions and answers (the `transcripts` table, 7 days), newest first.
- * Filters: kind (chat | photo), vote (up | down), lang, q (a phrase in the question or answer); `before` (ms) pages
- * further back and `limit` is at most 200.
+ * Filters: kind (chat | photo), vote (up | down), lang, q (a phrase in the question or answer, or digits of the phone
+ * number); `before` (ms) pages further back and `limit` is at most 200.
  */
 export async function handleAdminAnswers(request: Request, env: Env): Promise<Response> {
   if (!env.ADMIN_TOKEN) return apiError('bad_request', 404)
@@ -87,8 +87,8 @@ export async function handleAdminAnswers(request: Request, env: Env): Promise<Re
   if (q) {
     // A phrase, not a pattern: SQL wildcards in it are escaped. LIKE ignores case for ASCII only.
     const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
-    where.push("(question LIKE ? ESCAPE '\\' OR answer LIKE ? ESCAPE '\\')")
-    params.push(pattern, pattern)
+    where.push("(question LIKE ? ESCAPE '\\' OR answer LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\')")
+    params.push(pattern, pattern, pattern)
   }
   const before = Number(p.get('before'))
   if (Number.isSafeInteger(before) && before > 0) {
@@ -97,7 +97,7 @@ export async function handleAdminAnswers(request: Request, env: Env): Promise<Re
   }
   const asked = p.get('limit') === null ? DEFAULT_ANSWERS : Number(p.get('limit'))
   const limit = Number.isInteger(asked) ? Math.min(Math.max(asked, 1), MAX_ANSWERS) : DEFAULT_ANSWERS
-  const sql = `SELECT id, created, kind, lang, state, district, model, outcome, question, answer, vote, ms FROM transcripts${
+  const sql = `SELECT id, created, kind, phone, lang, state, district, model, outcome, question, answer, vote, ms FROM transcripts${
     where.length ? ` WHERE ${where.join(' AND ')}` : ''
   } ORDER BY created DESC, id DESC LIMIT ?`
   // One row more than asked says whether there is another page.

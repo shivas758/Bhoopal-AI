@@ -158,7 +158,8 @@ export function transcriptOf(r: DiagnoseResult) {
   return lines.filter(Boolean).join('\n')
 }
 
-export async function handleDiagnose(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+/** `phone` is the logged-in account (checked by the router), kept with the transcript for the owner's page. */
+export async function handleDiagnose(request: Request, env: Env, ctx: ExecutionContext, phone?: string): Promise<Response> {
   if (!env.GEMINI_API_KEY) return apiError('not_configured', 503)
   const req = (await request.json().catch(() => null)) as Partial<DiagnoseRequest> | null
   if (!req || typeof req.image !== 'string' || !isLang(req.lang) || !MIME_TYPES.has(req.mimeType ?? '')) {
@@ -192,10 +193,11 @@ export async function handleDiagnose(request: Request, env: Env, ctx: ExecutionC
   const metric = (outcome: string, extra: Partial<MetricEvent> = {}, answer = '') => {
     const ms = Date.now() - started
     record(env, { kind: 'photo', outcome, id, lang, state: farmer.state, ms, ...extra })
-    // The owner's "Recent answers" table (#/admin): the farmer's note and the result (never the photo), kept 7 days.
+    // The owner's "Recent answers" table (#/admin): the farmer's number, note and the result (never the photo), kept 7 days.
     ctx.waitUntil(
       saveTranscript(env.DB, {
         kind: 'photo',
+        phone,
         qid: id,
         lang,
         state: farmer.state,

@@ -107,7 +107,7 @@ export default {
           const phone = await sessionPhone(request, env)
           if (!phone) return apiError('unauthorized', 401)
           ctx.waitUntil(noteActivity(env.DB, phone, 'chats'))
-          return await handleChat(request, env, ctx)
+          return await handleChat(request, env, ctx, phone)
         }
         case 'POST /api/diagnose': {
           if (!(await allowed(env.PHOTO_LIMITER, request))) return apiError('rate_limited', 429)
@@ -116,7 +116,7 @@ export default {
           const phone = await sessionPhone(request, env)
           if (!phone) return apiError('unauthorized', 401)
           ctx.waitUntil(noteActivity(env.DB, phone, 'photos'))
-          return await handleDiagnose(request, env, ctx)
+          return await handleDiagnose(request, env, ctx, phone)
         }
         case 'POST /api/seen':
           if (!(await allowed(env.DATA_LIMITER, request))) return apiError('rate_limited', 429)

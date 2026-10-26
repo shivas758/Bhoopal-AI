@@ -321,11 +321,13 @@ export interface AdminAiStats {
   error?: string
 }
 
-/** One kept question and answer (GET /api/admin/answers, the `transcripts` table): 7 days, no phone number. */
+/** One kept question and answer (GET /api/admin/answers, the `transcripts` table): 7 days. */
 export interface AdminAnswer {
   id: number
   created: number
   kind: 'chat' | 'photo'
+  /** The account that asked (10 digits); null for rows written before migration 0006. */
+  phone: string | null
   lang: string
   state: string | null
   district: string | null

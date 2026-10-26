@@ -200,6 +200,8 @@ const MAX_TRANSCRIPT_CHARS = 12_000
 
 export interface Transcript {
   kind: 'chat' | 'photo'
+  /** The account that asked (10 digits). */
+  phone?: string
   /** The answer id the app sends back with thumbs up/down. */
   qid?: string
   lang: string
@@ -212,17 +214,18 @@ export interface Transcript {
   ms?: number
 }
 
-/** Keeps a question and its answer for the owner's analytics page (#/admin): no phone number, 7 days. */
+/** Keeps a question and its answer, with the farmer's number, for the owner's analytics page (#/admin): 7 days. */
 export function saveTranscript(db: Db, t: Transcript, now = Date.now()): Promise<void> {
   if (!db) return Promise.resolve()
   return safely('transcript write', undefined, async () => {
     await db
       .prepare(
-        'INSERT INTO transcripts (created, kind, qid, lang, state, district, model, outcome, question, answer, vote, ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)',
+        'INSERT INTO transcripts (created, kind, phone, qid, lang, state, district, model, outcome, question, answer, vote, ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)',
       )
       .bind(
         now,
         t.kind,
+        t.phone ?? null,
         t.qid ?? null,
         t.lang,
         t.state ?? null,

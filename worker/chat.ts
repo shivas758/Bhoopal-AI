@@ -171,7 +171,8 @@ function questionId(text: string) {
   return (h >>> 0).toString(36)
 }
 
-export async function handleChat(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+/** `phone` is the logged-in account (checked by the router), kept with the transcript for the owner's page. */
+export async function handleChat(request: Request, env: Env, ctx: ExecutionContext, phone?: string): Promise<Response> {
   const body = (await request.json().catch(() => null)) as (Partial<ChatRequest> & { model?: unknown }) | null
   const req = parseRequest(body)
   // Price buttons can be answered without the AI; everything else needs it.
@@ -217,10 +218,11 @@ export async function handleChat(request: Request, env: Env, ctx: ExecutionConte
   const metric = (outcome: string, extra: Partial<MetricEvent> = {}, answer = sentText) => {
     const ms = Date.now() - started
     record(env, { kind: 'chat', outcome, id: qid, lang: req.lang, state: state?.id, ms, ...extra })
-    // The owner's "Recent answers" table (#/admin): the question and the answer, kept 7 days, without the phone number.
+    // The owner's "Recent answers" table (#/admin): the question and the answer, with the farmer's number, kept 7 days.
     ctx.waitUntil(
       saveTranscript(env.DB, {
         kind: 'chat',
+        phone,
         qid,
         lang: req.lang,
         state: state?.id,

@@ -83,7 +83,7 @@ export const en = {
   'auth.offline': 'You need internet to log in.',
   'auth.ended': 'Please log in again.',
   'auth.privacy':
-    'Your mobile number is used only for logging in. Questions and answers are kept for 7 days, without your number, to improve BhooPal. BhooPal never asks for money or OTPs.',
+    'Your mobile number is used only for logging in. Questions and answers are kept for 7 days to improve BhooPal. BhooPal never asks for money or OTPs.',
 
   'onboard.language': 'Choose your language',
   'onboard.trust': 'Free for every farmer. No OTP, nothing to pay.',

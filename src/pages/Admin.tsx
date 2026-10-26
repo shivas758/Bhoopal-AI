@@ -419,7 +419,7 @@ const ANSWERS_PAGE = 50
 const ANSWERED = new Set(['answered', 'template', 'cached', 'resting_template', 'backup'])
 const langName = (lang: string) => (isLang(lang) ? LANG_INFO[lang].english : lang)
 
-/** The questions and answers the Worker keeps for 7 days (no phone numbers), newest first, with filters and a search. */
+/** The questions and answers the Worker keeps for 7 days, with the account that asked, newest first, with filters and a search. */
 function AnswersSection({ token, refresh }: { token: string; refresh: number }) {
   const [kind, setKind] = useState<KindFilter>('all')
   const [vote, setVote] = useState<VoteFilter>('all')
@@ -482,7 +482,7 @@ function AnswersSection({ token, refresh }: { token: string; refresh: number }) 
     <Card>
       <h2 className="mb-1 font-bold">Recent answers</h2>
       <p className="mb-3 text-sm text-stone-600">
-        Every question and photo check of the last 7 days with what the AI said, newest first. No phone numbers; for a photo check, the farmer's note and the
+        Every question and photo check of the last 7 days with what the AI said and who asked, newest first. For a photo check, the farmer's note and the
         result, never the photo. A thumb appears when the farmer taps one.
       </p>
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -509,8 +509,8 @@ function AnswersSection({ token, refresh }: { token: string; refresh: number }) 
         >
           <input
             className={`${inputClass} max-w-56 py-2 text-sm`}
-            placeholder="A word in the question or answer"
-            aria-label="Search the questions and answers"
+            placeholder="A word, or a phone number"
+            aria-label="Search the questions, answers and phone numbers"
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
           />
@@ -521,7 +521,7 @@ function AnswersSection({ token, refresh }: { token: string; refresh: number }) 
       </div>
       {error && (
         <Notice tone="danger" alert>
-          {error.code === 'server' ? 'The server could not read the answers. Is migration 0005 applied to this database?' : errorText(error)}
+          {error.code === 'server' ? 'The server could not read the answers. Are migrations 0005 and 0006 applied to this database?' : errorText(error)}
         </Notice>
       )}
       {loading && !rows.length ? (
@@ -553,6 +553,8 @@ function AnswerRow({ row: r }: { row: AdminAnswer }) {
   return (
     <li className="border-t border-stone-100 py-3 first:border-t-0 first:pt-0">
       <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-stone-500">
+        <span className="font-medium text-stone-800 tabular-nums">{r.phone ? formatPhone(r.phone) : 'Account unknown'}</span>
+        {sep}
         <span>{dateTimeIst(r.created)}</span>
         {sep}
         <span>{r.kind === 'photo' ? 'Photo check' : 'Question'}</span>
